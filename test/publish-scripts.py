@@ -2,10 +2,15 @@
 import os
 from pathlib import Path
 import subprocess
+import shutil
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "internal" / "scripts"
+
+
+def formula(version: str, commit: str = "a" * 40, description: str = "example") -> str:
+    return f'# releaseway-version: {version}\n# releaseway-source-commit: {commit}\nclass Example < Formula\n  desc "{description}"\nend\n'
 
 
 def run(script: str, *, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -79,6 +84,9 @@ def assert_preflight() -> None:
         assert bad_branch.returncode != 0
         assert "single-line" in bad_branch.stderr
 
+        bad_override = run("validate-publish-inputs.sh", cwd=cwd, env={**base, "ALLOW_DOWNGRADE": "yes"})
+        assert bad_override.returncode != 0
+
 
 def assert_credentials() -> None:
     with tempfile.TemporaryDirectory() as directory:
@@ -132,7 +140,7 @@ def assert_commit_and_retry() -> None:
         subprocess.run(["git", "clone", str(remote), str(seed)], check=True, capture_output=True)
         configure(seed)
         (seed / "Formula").mkdir()
-        (seed / "Formula/example.rb").write_text("old\n")
+        (seed / "Formula/example.rb").write_text(formula("0.9.0"))
         git(seed, "add", ".")
         git(seed, "commit", "-m", "seed")
         git(seed, "push", "origin", "main")
@@ -157,7 +165,7 @@ def assert_commit_and_retry() -> None:
         assert no_change.returncode == 0, no_change.stderr
         assert output.read_text() == "changed=false\n"
 
-        (publisher / "Formula/example.rb").write_text("new\n")
+        (publisher / "Formula/example.rb").write_text(formula("1.0.0"))
         output.write_text("")
         changed = run(
             "commit-formula.sh",
@@ -167,6 +175,7 @@ def assert_commit_and_retry() -> None:
                 "FORMULA_PATH": "Formula/example.rb",
                 "FORMULA": "example",
                 "VERSION": "1.0.0",
+                "COMMIT": "a" * 40,
             },
         )
         assert changed.returncode == 0, changed.stderr
@@ -178,15 +187,33 @@ def assert_commit_and_retry() -> None:
         git(competitor, "commit", "-m", "chore: update other")
         git(competitor, "push", "origin", "main")
 
+        # Reject the first push to exercise the bounded retry, not just an initial rebase.
+        wrappers = root / "wrappers"
+        wrappers.mkdir()
+        real_git = shutil.which("git")
+        wrapper = wrappers / "git"
+        marker = root / "push-rejected"
+        attempts = root / "push-count"
+        wrapper.write_text(
+            "#!/usr/bin/env python3\nimport os, sys\nfrom pathlib import Path\n"
+            + f"marker = Path({str(marker)!r})\nattempts = Path({str(attempts)!r})\n"
+            + "if sys.argv[1] == 'push':\n"
+            + "    with attempts.open('a') as output: output.write('push\\n')\n"
+            + "    if not marker.exists():\n        marker.touch()\n        sys.exit(1)\n"
+            + f"os.execv({real_git!r}, [{real_git!r}, *sys.argv[1:]])\n"
+        )
+        wrapper.chmod(0o755)
+        retry_path = str(wrappers) + os.pathsep + os.environ["PATH"]
         pushed = run(
             "push-formula.sh",
             cwd=publisher,
-            env={"TAP_BRANCH": "main", "PUSH_ATTEMPTS": "3"},
+            env={"TAP_BRANCH": "main", "PUSH_ATTEMPTS": "3", "FORMULA_PATH": "Formula/example.rb", "VERSION": "1.0.0", "COMMIT": "a" * 40, "PATH": retry_path},
         )
         assert pushed.returncode == 0, pushed.stderr
+        assert attempts.read_text() == "push\npush\n"
 
         subprocess.run(["git", "clone", str(remote), str(verify)], check=True, capture_output=True)
-        assert (verify / "Formula/example.rb").read_text() == "new\n"
+        assert (verify / "Formula/example.rb").read_text() == formula("1.0.0")
         assert (verify / "Formula/other.rb").read_text() == "other\n"
 
         subjects = git(verify, "log", "--format=%s", "-3").splitlines()
@@ -196,11 +223,81 @@ def assert_commit_and_retry() -> None:
         push_script = (SCRIPTS / "push-formula.sh").read_text()
         assert "force" not in push_script.lower()
 
+        # A newer publication on the same Formula must be checked before rebase/push.
+        git(competitor, "pull", "--ff-only")
+        (competitor / "Formula/example.rb").write_text(formula("2.0.0", "b" * 40))
+        git(competitor, "add", ".")
+        git(competitor, "commit", "-m", "publish newer formula")
+        remote_head = git(competitor, "rev-parse", "HEAD")
+        marker.unlink()
+        wrapper.write_text(
+            "#!/usr/bin/env python3\nimport os, sys, subprocess\nfrom pathlib import Path\n"
+            + f"marker = Path({str(marker)!r})\n"
+            + "if sys.argv[1] == 'push' and not marker.exists():\n    marker.touch()\n"
+            + f"    subprocess.run([{real_git!r}, '-C', {str(competitor)!r}, 'push', 'origin', 'main'], check=True)\n"
+            + f"os.execv({real_git!r}, [{real_git!r}, *sys.argv[1:]])\n"
+        )
+        stale = run("push-formula.sh", cwd=publisher, env={"FORMULA_PATH": "Formula/example.rb", "VERSION": "1.0.0", "COMMIT": "a" * 40, "PATH": retry_path})
+        assert stale.returncode != 0
+        assert "downgrade" in stale.stderr
+        assert git(competitor, "ls-remote", "origin", "refs/heads/main").split()[0] == remote_head
+
+
+def assert_update_policy() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        repo = Path(directory)
+        git(repo, "init", "--initial-branch=main")
+        configure(repo)
+        (repo / "Formula").mkdir()
+        target = repo / "Formula/example.rb"
+        target.write_text(formula("1.2.3"))
+        git(repo, "add", ".")
+        git(repo, "commit", "-m", "baseline")
+        baseline = git(repo, "rev-parse", "HEAD")
+        for version, commit, override, allowed in [
+            ("1.2.4", "b" * 40, "false", True),
+            ("1.2.3", "a" * 40, "false", True),
+            ("1.2.3", "b" * 40, "false", False),
+            ("1.2.2", "a" * 40, "false", False),
+            ("1.2.3-rc.1", "a" * 40, "false", False),
+            ("1.3.0-rc.1", "b" * 40, "false", True),
+            ("nightly", "a" * 40, "false", False),
+            ("1.2.2", "b" * 40, "true", True),
+            ("1.2.3", "b" * 40, "true", True),
+            ("nightly", "b" * 40, "true", True),
+        ]:
+            git(repo, "reset", "--hard", baseline)
+            target.write_text(formula(version, commit, "updated description"))
+            output = repo / "output"
+            output.write_text("")
+            result = run("commit-formula.sh", cwd=repo, env={"FORMULA_PATH": "Formula/example.rb", "FORMULA": "example", "VERSION": version, "COMMIT": commit, "ALLOW_DOWNGRADE": override, "GITHUB_OUTPUT": str(output)})
+            assert (result.returncode == 0) == allowed, (version, commit, override, result.stderr)
+            if not allowed:
+                assert git(repo, "rev-parse", "HEAD") == baseline
+                assert not git(repo, "diff", "--cached")
+                assert "allow-downgrade=true" in result.stderr
+
+        # Bootstrap an existing source Formula, then a new Formula.
+        git(repo, "reset", "--hard", baseline)
+        target.write_text('class Example < Formula\n  version "1.2.3"\n  url "https://github.com/owner/repo/archive/' + "a" * 40 + '.tar.gz"\nend\n')
+        git(repo, "add", ".")
+        git(repo, "commit", "-m", "legacy source")
+        target.write_text(formula("1.2.3", description="metadata edit"))
+        result = run("commit-formula.sh", cwd=repo, env={"FORMULA_PATH": "Formula/example.rb", "FORMULA": "example", "VERSION": "1.2.3", "COMMIT": "a" * 40, "GITHUB_OUTPUT": str(repo / "output")})
+        assert result.returncode == 0, result.stderr
+        target.unlink()
+        git(repo, "add", ".")
+        git(repo, "commit", "-m", "remove formula")
+        target.write_text(formula("nightly"))
+        result = run("commit-formula.sh", cwd=repo, env={"FORMULA_PATH": "Formula/example.rb", "FORMULA": "example", "VERSION": "nightly", "COMMIT": "a" * 40, "GITHUB_OUTPUT": str(repo / "output")})
+        assert result.returncode == 0, result.stderr
+
 
 def main() -> None:
     assert_preflight()
     assert_credentials()
     assert_commit_and_retry()
+    assert_update_policy()
     print("Homebrew publish scripts passed")
 
 

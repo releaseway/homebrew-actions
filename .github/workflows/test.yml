@@ -25,6 +25,8 @@ jobs:
         run: python3 test/formula-generator.py
       - name: Workflow contracts
         run: python3 test/workflow-contracts.py
+      - name: Release evidence regression
+        run: python3 test/release-evidence.py
       - name: Publish scripts
         run: python3 test/publish-scripts.py
       - name: Deploy-key arguments
@@ -37,6 +39,8 @@ jobs:
             internal/formula/generate.sh \
             internal/scripts/*.sh \
             scripts/setup-deploy-key.sh
+      - name: Ruby syntax
+        run: ruby -c internal/formula/render.rb && ruby -c internal/scripts/validate-formula-update.rb
       - name: Whitespace
         run: git diff --check
 

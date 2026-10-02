@@ -25,6 +25,11 @@ on:
         required: false
         type: string
         default: .github/homebrew/formula.yml
+      allow-downgrade:
+        description: Allow an intentional downgrade, same-version source replacement, or incomparable version.
+        required: false
+        type: boolean
+        default: false
     secrets:
       tap_token:
         description: Token with contents write access to the destination tap.
@@ -47,7 +52,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: homebrew-publish-${{ inputs.tap-repository }}-${{ github.repository }}-${{ inputs.spec-path }}-${{ inputs.version }}
+  group: homebrew-publish-${{ inputs.tap-repository }}-${{ github.repository }}-${{ inputs.spec-path }}
   cancel-in-progress: false
 
 jobs:
@@ -71,6 +76,7 @@ jobs:
           VERSION: ${{ inputs.version }}
           TAP_REPOSITORY: ${{ inputs.tap-repository }}
           TAP_BRANCH: ${{ inputs.tap-branch }}
+          ALLOW_DOWNGRADE: ${{ inputs.allow-downgrade }}
         run: bash automation/internal/scripts/validate-publish-inputs.sh
 
       - name: Select tap credential
@@ -252,6 +258,8 @@ jobs:
           FORMULA_PATH: ${{ needs.generate.outputs.formula-path }}
           FORMULA: ${{ needs.generate.outputs.formula }}
           VERSION: ${{ needs.generate.outputs.version }}
+          COMMIT: ${{ inputs.commit }}
+          ALLOW_DOWNGRADE: ${{ inputs.allow-downgrade }}
         run: bash ../automation/internal/scripts/commit-formula.sh
 
       - name: Push Formula
@@ -259,6 +267,10 @@ jobs:
         working-directory: tap
         env:
           TAP_BRANCH: ${{ inputs.tap-branch }}
+          FORMULA_PATH: ${{ needs.generate.outputs.formula-path }}
+          VERSION: ${{ needs.generate.outputs.version }}
+          COMMIT: ${{ inputs.commit }}
+          ALLOW_DOWNGRADE: ${{ inputs.allow-downgrade }}
         run: bash ../automation/internal/scripts/push-formula.sh
 
       - name: Report publish state

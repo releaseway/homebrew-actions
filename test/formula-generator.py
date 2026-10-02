@@ -10,6 +10,7 @@ import tempfile
 
 root = Path(__file__).resolve().parents[1]
 generator = root / "internal/formula/generate.sh"
+baseline_generator = os.environ.get("RELEASEWAY_BASELINE_GENERATOR")
 platform_assets = {
     "macos-arm64": "example_1.2.3_darwin_arm64.tar.gz",
     "macos-x86_64": "example_1.2.3_darwin_amd64.tar.gz",
@@ -151,6 +152,15 @@ esac
             capture_output=True,
             check=False,
         )
+        if baseline_generator:
+            current_formula = (tap / "Formula/example.rb").read_bytes() if result.returncode == 0 else None
+            baseline_output = workspace / "baseline-output"
+            baseline_output.write_text("")
+            baseline = subprocess.run(["bash", baseline_generator], env={**env, "GITHUB_OUTPUT": str(baseline_output)}, text=True, capture_output=True)
+            assert baseline.returncode == result.returncode, (baseline.stderr, result.stderr)
+            if result.returncode == 0:
+                assert current_formula == (tap / "Formula/example.rb").read_bytes()
+                assert output.read_bytes() == baseline_output.read_bytes()
         if expected_error:
             assert result.returncode != 0, "invalid release distribution should fail"
             assert expected_error in result.stderr, result.stderr
@@ -384,4 +394,4 @@ esac
         ],
     ], "distribution.assets.linux-arm64 may contain only")
 
-print("GitHub Release formula generation passed")
+    print("GitHub Release formula generation passed")

@@ -6,6 +6,11 @@ set -euo pipefail
 : "${TAP_REPOSITORY:?TAP_REPOSITORY is required}"
 : "${TAP_BRANCH:?TAP_BRANCH is required}"
 
+case "${ALLOW_DOWNGRADE:-false}" in
+  true|false) ;;
+  *) echo "allow-downgrade must be true or false" >&2; exit 1 ;;
+esac
+
 reject_multiline() {
   case "$2" in
     *$'\n'*|*$'\r'*)

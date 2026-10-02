@@ -7,9 +7,14 @@ on:
         description: Existing stable SemVer tag to publish.
         required: true
         type: string
+      acceptance-runs:
+        description: Successful exact-candidate fixture run IDs, comma-separated
+        required: true
+        type: string
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: release-${{ inputs.tag }}
@@ -50,6 +55,17 @@ jobs:
             echo "tag=$TAG"
             echo "target=$TARGET"
           } >> "$GITHUB_OUTPUT"
+
+      - name: Verify exact-candidate CI and acceptance evidence
+        env:
+          GH_TOKEN: ${{ secrets.RELEASEWAY_EVIDENCE_TOKEN || github.token }}
+          CANDIDATE: ${{ steps.release.outputs.target }}
+          ACCEPTANCE_RUNS: ${{ inputs.acceptance-runs }}
+        run: |
+          python3 scripts/verify-release-evidence.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --candidate "$CANDIDATE" \
+            --acceptance-runs "$ACCEPTANCE_RUNS"
 
       - name: Publish immutable automation release
         id: publish

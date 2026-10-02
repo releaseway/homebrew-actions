@@ -11,6 +11,9 @@ if [ -z "$(git status --porcelain -- "$FORMULA_PATH")" ]; then
   exit 0
 fi
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ruby "$script_dir/validate-formula-update.rb" HEAD
+
 git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 git add "$FORMULA_PATH"

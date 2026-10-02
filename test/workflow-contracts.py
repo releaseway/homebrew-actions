@@ -57,14 +57,17 @@ def assert_publish_contract() -> None:
     assert "FORMULA: ${{ needs.generate.outputs.formula }}" in text
     assert "state=published" in text
     assert "state=unchanged" in text
-    assert "group: homebrew-publish-${{ inputs.tap-repository }}-${{ github.repository }}-${{ inputs.spec-path }}-${{ inputs.version }}" in text
+    assert "group: homebrew-publish-${{ inputs.tap-repository }}-${{ github.repository }}-${{ inputs.spec-path }}\n" in text
+    assert "      allow-downgrade:" in inputs
+    assert text.count("ALLOW_DOWNGRADE: ${{ inputs.allow-downgrade }}") == 3
     assert "\n  homebrew-check:" in text
     assert "\n  publish:" in text
 
 
 def assert_internal_formula_contract() -> None:
     action = (ROOT / "internal/formula/action.yml").read_text()
-    generator = (ROOT / "internal/formula/generate.sh").read_text()
+    generator = (ROOT / "internal/formula/generate.sh").read_text() + (ROOT / "internal/formula/render.rb").read_text()
+    assert 'ruby "$script_dir/render.rb"' in generator
     inputs = action.split("outputs:", 1)[0]
 
     assert "  formula:" not in inputs

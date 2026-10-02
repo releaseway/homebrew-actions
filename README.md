@@ -137,6 +137,33 @@ The publish workflow additionally requires `commit` and `version`. `commit` must
 the full source SHA used by the product release; the checked-out source is verified
 against it before Formula rendering.
 
+### Version protection and rollback
+
+Publishing an existing Formula blocks version downgrades by default. A same-version
+metadata or install/test edit is allowed when the source commit is unchanged.
+Generated Formulas retain their version and source commit so updates can be checked
+before committing and against the latest remote tap before each push. Different
+versions of the same product share a publish concurrency group. Concurrent updates
+to another Formula are preserved through bounded fetch/rebase retries.
+
+For an intentional rollback, same-version source replacement, or a version that
+cannot be compared numerically, explicitly opt in:
+
+```yaml
+with:
+  tap-repository: owner/homebrew-tap
+  commit: <full-source-sha>
+  version: "1.2.3"
+  allow-downgrade: true
+```
+
+This option permits replacing the existing version. Source SHA, release provenance,
+asset digest and Formula validation still apply. A new Formula can use any supported
+non-empty version. Older source Formulas can be compared using their explicit version
+and archive commit; a same-version update without identifiable source provenance
+requires the explicit override. Conflicting edits to the same Formula can still fail
+during rebase; rerun against the latest tap state.
+
 ## Formula ownership
 
 The spec contains product-specific Homebrew intent such as metadata, dependencies,
@@ -186,9 +213,19 @@ python3 test/workflow-contracts.py
 python3 test/publish-scripts.py
 python3 test/setup-deploy-key.py
 python3 test/tap-maintenance.py
+python3 test/release-evidence.py
 ```
 
 CI runs the regression suite on Linux and macOS and lints the reusable workflows.
+
+The Formula action validates inputs in its shell entrypoint and loads
+`internal/formula/render.rb` from the pinned automation checkout. Renderer extraction
+preserves Formula bytes and workflow outputs.
+
+Repository releases require latest successful push CI at the tag's SHA and matching
+public Homebrew `acceptance-runs`. See the
+[candidate guide](https://github.com/releaseway/release-fixture#candidate-release-readiness)
+for literal candidate pins, fixture taps, retention and retries.
 
 ## License
 

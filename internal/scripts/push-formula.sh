@@ -3,6 +3,7 @@ set -euo pipefail
 
 branch="${TAP_BRANCH:-main}"
 attempts="${PUSH_ATTEMPTS:-3}"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 case "$attempts" in
   "" | *[!0-9]*)
@@ -18,6 +19,9 @@ fi
 
 attempt=1
 while [ "$attempt" -le "$attempts" ]; do
+  git fetch origin "$branch:refs/remotes/origin/$branch"
+  ruby "$script_dir/validate-formula-update.rb" "origin/${branch}"
+  git rebase "origin/${branch}"
   if git push origin "HEAD:${branch}"; then
     exit 0
   fi
@@ -27,7 +31,5 @@ while [ "$attempt" -le "$attempts" ]; do
     exit 1
   fi
 
-  git fetch origin "$branch"
-  git rebase "origin/${branch}"
   attempt=$((attempt + 1))
 done
