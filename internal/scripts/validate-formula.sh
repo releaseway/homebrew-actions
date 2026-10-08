@@ -63,13 +63,17 @@ qualified_formula="${validation_tap}/${FORMULA}"
 # dependency taps visible, and restore the image's other checkouts on exit.
 if [ "${GITHUB_ACTIONS:-}" = "true" ] && [ "${RUNNER_ENVIRONMENT:-}" = "github-hosted" ]; then
   export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1
-  dependencies="$(brew deps --full-name --include-build --include-test --include-optional --include-implicit "$qualified_formula")"
+  # Query the named Formula directly: `brew deps` can evaluate unrelated taps
+  # while resolving installed packages on preconfigured runner images.
+  dependency_taps="$(FORMULA_REFERENCE="$qualified_formula" brew ruby -rformulary -e '
+    formula = Formulary.factory(ENV.fetch("FORMULA_REFERENCE"))
+    puts formula.recursive_dependencies { |_dependent, _dependency| nil }
+                .filter_map { |dependency| dependency.to_formula.tap&.name }.uniq
+  ')"
   required_taps=" homebrew/core homebrew/cask ${validation_tap} "
-  while IFS= read -r dependency; do
-    case "$dependency" in
-      */*/*) required_taps+="${dependency%/*} " ;;
-    esac
-  done <<< "$dependencies"
+  while IFS= read -r dependency_tap; do
+    required_taps+="${dependency_tap} "
+  done <<< "$dependency_taps"
   installed_taps="$(brew tap)"
   mkdir -p "${validation_root}/isolated-taps"
   while IFS= read -r tap; do

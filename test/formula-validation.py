@@ -26,9 +26,10 @@ elif args[0] == "tap":
             print(path.parent.name + "/" + path.name.removeprefix("homebrew-"))
     else:
         shutil.copytree(args[2], tap_path(args[1]))
-elif args[0] == "deps":
-    print("vendor/tools/build-tool\nvendor/tools/test-tool\nopenssl@3")
-    sys.exit(int(os.environ.get("FAIL_DEPS", "0")))
+elif args[0] == "ruby":
+    assert os.environ["FORMULA_REFERENCE"].endswith("/example")
+    print("vendor/tools\nhomebrew/core")
+    sys.exit(int(os.environ.get("FAIL_QUERY", "0")))
 elif args[0] in ("audit", "install", "test"):
     assert tap_path("vendor/tools").is_dir(), "dependency tap was hidden"
     assert tap_path("homebrew/core").is_dir(), "core tap was hidden"
@@ -85,7 +86,7 @@ def check(*, hosted=True, mode="release", failure=None):
         commands = [args[0] for args in calls]
         assert commands[-2:] == ["untap", "untrust"]
         if not hosted:
-            assert "deps" not in commands
+            assert "ruby" not in commands
             assert "--repository" not in commands
         if mode == "spec":
             assert "install" not in commands and "test" not in commands
@@ -94,6 +95,6 @@ def check(*, hosted=True, mode="release", failure=None):
 check()
 check(mode="spec")
 check(hosted=False)
-for command in ["deps", "audit", "install", "test"]:
+for command in ["query", "audit", "install", "test"]:
     check(failure=command)
 print("Formula validation isolation passed")
