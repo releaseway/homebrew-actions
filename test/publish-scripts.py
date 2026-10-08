@@ -9,8 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "internal" / "scripts"
 
 
-def formula(version: str, commit: str = "a" * 40, description: str = "example") -> str:
-    return f'# releaseway-version: {version}\n# releaseway-source-commit: {commit}\nclass Example < Formula\n  desc "{description}"\nend\n'
+def formula(version: str, commit: str = "a" * 40, description: str = "example", scheme: int | None = None) -> str:
+    scheme_line = f"  version_scheme {scheme}\n" if scheme is not None else ""
+    return f'# releaseway-version: {version}\n# releaseway-source-commit: {commit}\nclass Example < Formula\n  desc "{description}"\n{scheme_line}end\n'
 
 
 def run(script: str, *, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -123,7 +124,7 @@ def assert_credentials() -> None:
         assert "Provide tap_token or tap_deploy_key" in result.stdout
 
 
-def assert_commit_and_retry() -> None:
+def assert_commit_and_retry(*, scheme: int | None = None, newer_scheme: int | None = None, newer_version: str = "2.0.0") -> None:
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         remote = root / "tap.git"
@@ -140,7 +141,7 @@ def assert_commit_and_retry() -> None:
         subprocess.run(["git", "clone", str(remote), str(seed)], check=True, capture_output=True)
         configure(seed)
         (seed / "Formula").mkdir()
-        (seed / "Formula/example.rb").write_text(formula("0.9.0"))
+        (seed / "Formula/example.rb").write_text(formula("11.0.4" if scheme else "0.9.0"))
         git(seed, "add", ".")
         git(seed, "commit", "-m", "seed")
         git(seed, "push", "origin", "main")
@@ -165,7 +166,7 @@ def assert_commit_and_retry() -> None:
         assert no_change.returncode == 0, no_change.stderr
         assert output.read_text() == "changed=false\n"
 
-        (publisher / "Formula/example.rb").write_text(formula("1.0.0"))
+        (publisher / "Formula/example.rb").write_text(formula("1.0.0", scheme=scheme))
         output.write_text("")
         changed = run(
             "commit-formula.sh",
@@ -213,7 +214,7 @@ def assert_commit_and_retry() -> None:
         assert attempts.read_text() == "push\npush\n"
 
         subprocess.run(["git", "clone", str(remote), str(verify)], check=True, capture_output=True)
-        assert (verify / "Formula/example.rb").read_text() == formula("1.0.0")
+        assert (verify / "Formula/example.rb").read_text() == formula("1.0.0", scheme=scheme)
         assert (verify / "Formula/other.rb").read_text() == "other\n"
 
         subjects = git(verify, "log", "--format=%s", "-3").splitlines()
@@ -225,7 +226,7 @@ def assert_commit_and_retry() -> None:
 
         # A newer publication on the same Formula must be checked before rebase/push.
         git(competitor, "pull", "--ff-only")
-        (competitor / "Formula/example.rb").write_text(formula("2.0.0", "b" * 40))
+        (competitor / "Formula/example.rb").write_text(formula(newer_version, "b" * 40, scheme=newer_scheme))
         git(competitor, "add", ".")
         git(competitor, "commit", "-m", "publish newer formula")
         remote_head = git(competitor, "rev-parse", "HEAD")
@@ -293,11 +294,96 @@ def assert_update_policy() -> None:
         assert result.returncode == 0, result.stderr
 
 
+def assert_scheme_policy() -> None:
+    cases = [
+        # A scheme increase starts a new version sequence, including new sources.
+        (None, "11.0.4", 1, "1.2.0", "b", False, True),
+        (0, "11.0.4", 1, "1.2.0", "b", False, True),
+        (1, "1.2.0", 1, "1.2.1", "b", False, True),
+        (1, "1.2.0", 0, "11.0.4", "a", False, False),
+        (1, "1.2.0", None, "11.0.4", "a", False, False),
+        (1, "1.2.1", 1, "1.2.0", "a", False, False),
+        (None, "1.2.0", 1, "1.2.0", "a", False, True),
+        (None, "1.2.0", 1, "1.2.0", "b", False, True),
+        (1, "1.2.0", 1, "1.2.0", "a", False, True),
+        (1, "1.2.0", 1, "1.2.0", "b", False, False),
+        (1, "1.2.0", 0, "11.0.4", "b", True, True),
+        (1, "1.2.1", 1, "1.2.0", "b", True, True),
+        (1, "1.2.0", 1, "1.2.0", "b", True, True),
+    ]
+    for old_scheme, old_version, new_scheme, new_version, source, override, allowed in cases:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            git(repo, "init", "--initial-branch=main")
+            configure(repo)
+            (repo / "Formula").mkdir()
+            target = repo / "Formula/example.rb"
+            target.write_text(formula(old_version, scheme=old_scheme))
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "baseline")
+            baseline = git(repo, "rev-parse", "HEAD")
+            # Metadata edits remain allowed for equal scheme/version/source.
+            target.write_text(formula(new_version, source * 40, "updated description", new_scheme))
+            output = repo / "output"
+            output.write_text("")
+            env = {"FORMULA_PATH": "Formula/example.rb", "FORMULA": "example", "VERSION": new_version,
+                   "COMMIT": source * 40, "ALLOW_DOWNGRADE": str(override).lower(), "GITHUB_OUTPUT": str(output)}
+            result = run("commit-formula.sh", cwd=repo, env=env)
+            assert (result.returncode == 0) == allowed, (old_scheme, old_version, new_scheme, new_version, result.stderr)
+            if allowed:
+                assert output.read_text() == "changed=true\n"
+            else:
+                assert git(repo, "rev-parse", "HEAD") == baseline
+                assert not git(repo, "diff", "--cached")
+
+    # Scheme-only changes must publish even with identical version/source/metadata.
+    with tempfile.TemporaryDirectory() as directory:
+        repo = Path(directory)
+        git(repo, "init", "--initial-branch=main")
+        configure(repo)
+        target = repo / "example.rb"
+        target.write_text(formula("1.2.0"))
+        git(repo, "add", ".")
+        git(repo, "commit", "-m", "baseline")
+        baseline = git(repo, "rev-parse", "HEAD")
+        output = repo / "output"
+        env = {"FORMULA_PATH": "example.rb", "FORMULA": "example", "VERSION": "1.2.0",
+               "COMMIT": "a" * 40, "GITHUB_OUTPUT": str(output)}
+        target.write_text(formula("1.2.0", scheme=1))
+        result = run("commit-formula.sh", cwd=repo, env=env)
+        assert result.returncode == 0, result.stderr
+        assert output.read_text() == "changed=true\n"
+
+        # Existing handwritten Formulas expose scheme through their Ruby stanza.
+        git(repo, "reset", "--hard", baseline)
+        target.write_text('class Example < Formula\n  version "11.0.4"\n  version_scheme 1\nend\n')
+        git(repo, "add", "example.rb")
+        git(repo, "commit", "-m", "legacy formula")
+        target.write_text(formula("12.0.0"))
+        result = run("commit-formula.sh", cwd=repo, env={**env, "VERSION": "12.0.0"})
+        assert result.returncode != 0
+        assert "downgrade" in result.stderr
+
+        target.write_text(formula("1.2.0", scheme=2))
+        result = run("commit-formula.sh", cwd=repo, env=env)
+        assert result.returncode == 0, result.stderr
+
+        # An explicit malformed candidate is never silently treated as scheme zero.
+        for declaration in ['-1', '1.5', '"1"', 'nil', '010', '1\n  version_scheme 2']:
+            target.write_text(formula("1.2.0", scheme=1).replace("version_scheme 1", f"version_scheme {declaration}"))
+            result = run("commit-formula.sh", cwd=repo, env={**env, "ALLOW_DOWNGRADE": "true"})
+            assert result.returncode != 0
+            assert "version_scheme must be a non-negative integer literal" in result.stderr
+
+
 def main() -> None:
     assert_preflight()
     assert_credentials()
     assert_commit_and_retry()
+    assert_commit_and_retry(scheme=1, newer_scheme=2, newer_version="0.5.0")
+    assert_commit_and_retry(scheme=1, newer_scheme=1, newer_version="1.0.1")
     assert_update_policy()
+    assert_scheme_policy()
     print("Homebrew publish scripts passed")
 
 
