@@ -55,14 +55,27 @@ git -C "$validation_path" config user.email "41898282+github-actions[bot]@users.
 git -C "$validation_path" add -A
 git -C "$validation_path" commit -m "test: validate $FORMULA" >/dev/null
 
+hosted_runner=false
+if [ "${GITHUB_ACTIONS:-}" = "true" ] && [ "${RUNNER_ENVIRONMENT:-}" = "github-hosted" ]; then
+  hosted_runner=true
+  export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1
+fi
+
 brew trust --tap "$validation_path"
-brew tap "$validation_tap" "$validation_path"
+if [ "$hosted_runner" = "true" ]; then
+  # `brew tap` also refreshes image-wide metadata. A validation-only checkout
+  # needs no completion links or description-cache updates.
+  validation_checkout="$(brew --repository)/Library/Taps/releaseway/homebrew-validation-${validation_id}"
+  mkdir -p "$(dirname "$validation_checkout")"
+  git clone --quiet --template= "$validation_path" "$validation_checkout"
+else
+  brew tap "$validation_tap" "$validation_path"
+fi
 qualified_formula="${validation_tap}/${FORMULA}"
 
 # Hosted images contain unrelated third-party taps. Keep the target and its
 # dependency taps visible, and restore the image's other checkouts on exit.
-if [ "${GITHUB_ACTIONS:-}" = "true" ] && [ "${RUNNER_ENVIRONMENT:-}" = "github-hosted" ]; then
-  export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1
+if [ "$hosted_runner" = "true" ]; then
   # Query the named Formula directly: `brew deps` can evaluate unrelated taps
   # while resolving installed packages on preconfigured runner images.
   dependency_taps="$(brew ruby -rformulary -e '

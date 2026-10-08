@@ -17,15 +17,17 @@ with (root / "calls.jsonl").open("a") as log:
     log.write(json.dumps(args) + "\n")
 def tap_path(name):
     owner, repo = name.split("/")
-    return root / "Taps" / owner / ("homebrew-" + repo)
+    return root / "Library/Taps" / owner / ("homebrew-" + repo)
 if args[0] == "--repository":
-    print(tap_path(args[1]))
+    print(tap_path(args[1]) if len(args) > 1 else root)
 elif args[0] == "tap":
     if len(args) == 1:
-        for path in sorted((root / "Taps").glob("*/*")):
+        for path in sorted((root / "Library/Taps").glob("*/*")):
             print(path.parent.name + "/" + path.name.removeprefix("homebrew-"))
     else:
         shutil.copytree(args[2], tap_path(args[1]))
+        if os.environ.get("RUNNER_ENVIRONMENT") == "github-hosted":
+            print("::error::Failed to import: unrelated runner tap", file=sys.stderr)
 elif args[0] == "ruby":
     # Homebrew strips arbitrary environment variables before running Ruby.
     assert "FORMULA_REFERENCE" not in os.environ
@@ -63,7 +65,7 @@ def check(*, hosted=True, mode="release", failure=None):
         originals = {}
         for name in ["aws/tap", "hashicorp/tap", "vendor/tools", "homebrew/core", "homebrew/cask"]:
             owner, repo = name.split("/")
-            path = brew_root / "Taps" / owner / ("homebrew-" + repo) / "marker"
+            path = brew_root / "Library/Taps" / owner / ("homebrew-" + repo) / "marker"
             path.parent.mkdir(parents=True)
             path.write_text(name)
             originals[path] = path.read_bytes()
@@ -83,9 +85,11 @@ def check(*, hosted=True, mode="release", failure=None):
         for path, content in originals.items():
             assert path.read_bytes() == content, f"original tap not restored: {path}"
         assert not list(temp.iterdir()), "temporary validation checkout was leaked"
-        assert not list((brew_root / "Taps/releaseway").glob("*"))
+        assert not list((brew_root / "Library/Taps/releaseway").glob("*"))
         calls = [json.loads(line) for line in (brew_root / "calls.jsonl").read_text().splitlines()]
         commands = [args[0] for args in calls]
+        if hosted:
+            assert "::error::" not in result.stderr, result.stderr
         assert commands[-2:] == ["untap", "untrust"]
         if not hosted:
             assert "ruby" not in commands
