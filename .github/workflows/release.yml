@@ -32,29 +32,22 @@ jobs:
 
       - name: Resolve release tag
         id: release
+        uses: releaseway/actions/prepare@9feef2fe68e2b5bc8739f3e23877499b0fa32a6c # v0.4.0
+        with:
+          mode: resolve
+          tag: ${{ inputs.tag }}
+
+      - name: Verify required release files
         env:
-          TAG: ${{ inputs.tag }}
+          TARGET: ${{ steps.release.outputs.commit }}
         run: |
           set -euo pipefail
-          if ! [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-            echo "release tag must be stable SemVer vX.Y.Z: $TAG" >&2
-            exit 1
-          fi
-
-          git fetch --force origin main "refs/tags/$TAG:refs/tags/$TAG"
-          TARGET="$(git rev-parse "$TAG^{commit}")"
-          git merge-base --is-ancestor "$TARGET" origin/main
 
           for path in \
             .github/workflows/check.yml \
             .github/workflows/publish.yml; do
-            git cat-file -e "$TAG:$path"
+            git cat-file -e "$TARGET:$path"
           done
-
-          {
-            echo "tag=$TAG"
-            echo "target=$TARGET"
-          } >> "$GITHUB_OUTPUT"
 
       - name: Verify exact-candidate CI and acceptance evidence
         env:
@@ -69,7 +62,7 @@ jobs:
 
       - name: Publish immutable automation release
         id: publish
-        uses: releaseway/actions@0dad8be512eae926535d0ba723f27be44a1bd623 # v0.3.2
+        uses: releaseway/actions@9feef2fe68e2b5bc8739f3e23877499b0fa32a6c # v0.4.0
         with:
           tag: ${{ steps.release.outputs.tag }}
           commit: ${{ steps.release.outputs.target }}
