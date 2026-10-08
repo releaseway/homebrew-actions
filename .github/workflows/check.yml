@@ -93,7 +93,7 @@ jobs:
     steps:
       - name: Setup Homebrew
         if: runner.os == 'Linux'
-        uses: Homebrew/actions/setup-homebrew@9f17989bd508c794353d974d1756f23b0bcf10c1 # main
+        uses: Homebrew/actions/setup-homebrew@9ffcbcc2c89631400988e8d4b1e3ac17dbbe3fe9 # main
         with:
           stable: true
 
