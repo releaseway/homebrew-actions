@@ -139,8 +139,25 @@ against it before Formula rendering.
 
 ### Version protection and rollback
 
-Publishing an existing Formula blocks version downgrades by default. A same-version
-metadata or install/test edit is allowed when the source commit is unchanged.
+Publishing an existing Formula blocks version downgrades by default. At equal
+scheme and version, metadata or install/test edits are allowed when the source
+commit is unchanged.
+Release ordering compares `(version_scheme, version)`, with the scheme taking
+precedence. The spec's optional `version_scheme` must be a non-negative integer;
+omitting it means `0`. To restart version numbering, add it to the product spec:
+
+```yaml
+version_scheme: 1
+```
+
+This renders `version_scheme 1` in both source and GitHub Release Formulas, allowing
+`(0, 11.0.4)` to advance to `(1, 1.2.0)`. Keep `version_scheme: 1` in subsequent
+release specs, such as version `1.2.1`; omitting it resets the candidate scheme to
+`0` and is blocked as a downgrade. Increase the scheme only when changing the
+version numbering system. A scheme-only increase is a publishable change, even
+when the version and source commit remain unchanged. At equal scheme and version,
+the same-source policy still applies. Existing Formulas without a scheme use `0`.
+
 Generated Formulas retain their version and source commit so updates can be checked
 before committing and against the latest remote tap before each push. Different
 versions of the same product share a publish concurrency group. Concurrent updates
@@ -157,8 +174,9 @@ with:
   allow-downgrade: true
 ```
 
-This option permits replacing the existing version. Source SHA, release provenance,
-asset digest and Formula validation still apply. A new Formula can use any supported
+This option permits replacing the existing version, including decreasing its
+version scheme. Source SHA, release provenance, asset digest and Formula validation
+still apply. A new Formula can use any supported
 non-empty version. Older source Formulas can be compared using their explicit version
 and archive commit; a same-version update without identifiable source provenance
 requires the explicit override. Conflicting edits to the same Formula can still fail
