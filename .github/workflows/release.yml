@@ -32,7 +32,7 @@ jobs:
 
       - name: Resolve release tag
         id: release
-        uses: releaseway/actions/prepare@9feef2fe68e2b5bc8739f3e23877499b0fa32a6c # v0.4.0
+        uses: releaseway/actions/prepare@5841e545ff259790a3b2461299e741d62c69a73d # v0.4.1
         with:
           mode: resolve
           tag: ${{ inputs.tag }}
@@ -62,7 +62,7 @@ jobs:
 
       - name: Publish immutable automation release
         id: publish
-        uses: releaseway/actions@9feef2fe68e2b5bc8739f3e23877499b0fa32a6c # v0.4.0
+        uses: releaseway/actions@5841e545ff259790a3b2461299e741d62c69a73d # v0.4.1
         with:
           tag: ${{ steps.release.outputs.tag }}
           commit: ${{ steps.release.outputs.target }}
