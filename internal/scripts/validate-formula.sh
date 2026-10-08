@@ -17,10 +17,29 @@ validation_root="$(mktemp -d)"
 validation_path="${validation_root}/homebrew-validation"
 validation_id="${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-1}"
 validation_tap="releaseway/validation-${validation_id}"
+isolated_tap_paths=()
+
+restore_taps() {
+  local index original backup failed=0
+  for ((index=0; index<${#isolated_tap_paths[@]}; index++)); do
+    original="${isolated_tap_paths[$index]}"
+    backup="${validation_root}/isolated-taps/${index}"
+    [ -e "$backup" ] || [ -L "$backup" ] || continue
+    if [ -e "$original" ] || [ -L "$original" ] || ! mv "$backup" "$original"; then
+      echo "Failed to restore tap to $original; backup retained at $backup" >&2
+      failed=1
+    fi
+  done
+  return "$failed"
+}
 
 cleanup() {
   status="$?"
   set +e
+  if ! restore_taps; then
+    echo "Validation files retained at $validation_root for recovery" >&2
+    exit 1
+  fi
   brew untap --force "$validation_tap" >/dev/null 2>&1
   brew untrust --tap "$validation_path" >/dev/null 2>&1
   rm -rf "$validation_root"
@@ -39,6 +58,31 @@ git -C "$validation_path" commit -m "test: validate $FORMULA" >/dev/null
 brew trust --tap "$validation_path"
 brew tap "$validation_tap" "$validation_path"
 qualified_formula="${validation_tap}/${FORMULA}"
+
+# Hosted images contain unrelated third-party taps. Keep the target and its
+# dependency taps visible, and restore the image's other checkouts on exit.
+if [ "${GITHUB_ACTIONS:-}" = "true" ] && [ "${RUNNER_ENVIRONMENT:-}" = "github-hosted" ]; then
+  export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1
+  dependencies="$(brew deps --full-name --include-build --include-test --include-optional --include-implicit "$qualified_formula")"
+  required_taps=" homebrew/core homebrew/cask ${validation_tap} "
+  while IFS= read -r dependency; do
+    case "$dependency" in
+      */*/*) required_taps+="${dependency%/*} " ;;
+    esac
+  done <<< "$dependencies"
+  installed_taps="$(brew tap)"
+  mkdir -p "${validation_root}/isolated-taps"
+  while IFS= read -r tap; do
+    [ -n "$tap" ] || continue
+    case "$tap" in homebrew/*) continue ;; esac
+    [[ "$required_taps" == *" $tap "* ]] && continue
+    tap_path="$(brew --repository "$tap")"
+    index="${#isolated_tap_paths[@]}"
+    isolated_tap_paths+=("$tap_path")
+    mv "$tap_path" "${validation_root}/isolated-taps/${index}"
+  done <<< "$installed_taps"
+fi
+
 brew audit --strict --formula "$qualified_formula"
 if [ "$VALIDATION_MODE" = "spec" ]; then
   exit 0

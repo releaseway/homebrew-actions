@@ -217,6 +217,12 @@ Direct pushes must be allowed by the destination branch policy.
 published immutable release, source commit, declared assets, and SHA-256 digests, then
 installs/tests the generated Formula on every required native runner before publishing.
 
+Linux x86_64 validation and spec audits use Ubuntu 24.04, matching the Linux arm64
+runner's Ubuntu release. On GitHub-hosted runners, validation temporarily isolates
+preinstalled taps unrelated to the Formula or its dependencies, restoring them on
+success or failure. Local and self-hosted tap checkouts remain in place. Kernel
+sandbox capability warnings and GitHub runner capacity notices remain visible.
+
 Every reusable workflow checks out its implementation from
 `job.workflow_repository@job.workflow_sha`, so a full-SHA workflow pin also pins its
 internal renderer and scripts.
@@ -229,6 +235,7 @@ Run deterministic regressions locally:
 python3 test/formula-generator.py
 python3 test/workflow-contracts.py
 python3 test/publish-scripts.py
+python3 test/formula-validation.py
 python3 test/setup-deploy-key.py
 python3 test/tap-maintenance.py
 python3 test/release-evidence.py
