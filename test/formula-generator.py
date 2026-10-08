@@ -174,6 +174,15 @@ esac
     assert 'runner-matrix=[{"platform":"macos-arm64","runner":"macos-latest"}]' in output
     assert "  depends_on :macos\n" not in formula
     assert "  depends_on :linux\n" not in formula
+    assert "version_scheme" not in formula
+
+    generate(["version_scheme: 0"])
+    assert "version_scheme" not in (tap / "Formula/example.rb").read_text()
+    for scheme in [1, 2]:
+        generate([f"version_scheme: {scheme}"])
+        assert f"  version_scheme {scheme}\n" in (tap / "Formula/example.rb").read_text()
+    for invalid in ["-1", "1.5", '"1"', "true", "null", "[]", "{}"]:
+        generate([f"version_scheme: {invalid}"], "version_scheme must be a non-negative integer")
 
     output = generate([], env_overrides={
         "VALIDATION_MODE": "spec", "FAKE_NETWORK_FAIL": "true",
@@ -184,6 +193,7 @@ esac
     assert 'runner-matrix=[{"platform":"spec","runner":"ubuntu-latest"}]' in output
 
     output = generate([
+        "version_scheme: 1",
         "distribution:",
         "  type: github-release",
         f'  tag: "{release_tag}"',
@@ -192,6 +202,7 @@ esac
     ])
     formula = (tap / "Formula/example.rb").read_text()
     assert 'version "1.2.3"' not in formula
+    assert "  version_scheme 1\n" in formula
     assert "  depends_on :macos\n" not in formula
     assert "  depends_on :linux\n" not in formula
     assert formula.count("on_macos do") == 1

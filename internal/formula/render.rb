@@ -369,7 +369,7 @@ def ensure_known_keys(spec)
   allowed = %w[
     name caveats conflicts_with dependencies deprecate disable desc homepage install keg_only
     license link_overwrite livecheck options post_install service test distribution
-    uses_from_macos
+    uses_from_macos version_scheme
   ]
   unknown = spec.keys - allowed
   fail_with("unsupported formula spec keys: #{unknown.join(", ")}") unless unknown.empty?
@@ -389,6 +389,10 @@ end
 
 fail_with("formula spec must be a mapping") unless spec.is_a?(Hash)
 ensure_known_keys(spec)
+version_scheme = spec.fetch("version_scheme", 0)
+unless version_scheme.is_a?(Integer) && version_scheme >= 0
+  fail_with("version_scheme must be a non-negative integer")
+end
 
 formula = required_string(spec, "name")
 unless formula.match?(/\A[A-Za-z0-9._+@-]+\z/)
@@ -432,6 +436,7 @@ else
   sources = distribution.fetch("sources")
 end
 content << "  license #{render_license(license)}\n"
+content << "  version_scheme #{version_scheme}\n" if version_scheme.positive?
 content << "\n"
 
 if distribution["type"] == "github-release"
