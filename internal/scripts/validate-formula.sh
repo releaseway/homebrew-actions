@@ -65,11 +65,11 @@ if [ "${GITHUB_ACTIONS:-}" = "true" ] && [ "${RUNNER_ENVIRONMENT:-}" = "github-h
   export HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1
   # Query the named Formula directly: `brew deps` can evaluate unrelated taps
   # while resolving installed packages on preconfigured runner images.
-  dependency_taps="$(FORMULA_REFERENCE="$qualified_formula" brew ruby -rformulary -e '
-    formula = Formulary.factory(ENV.fetch("FORMULA_REFERENCE"))
+  dependency_taps="$(brew ruby -rformulary -e '
+    formula = Formulary.factory(ARGV.fetch(0))
     puts formula.recursive_dependencies { |_dependent, _dependency| nil }
                 .filter_map { |dependency| dependency.to_formula.tap&.name }.uniq
-  ')"
+  ' -- "$qualified_formula")"
   required_taps=" homebrew/core homebrew/cask ${validation_tap} "
   while IFS= read -r dependency_tap; do
     required_taps+="${dependency_tap} "

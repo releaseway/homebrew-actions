@@ -27,7 +27,9 @@ elif args[0] == "tap":
     else:
         shutil.copytree(args[2], tap_path(args[1]))
 elif args[0] == "ruby":
-    assert os.environ["FORMULA_REFERENCE"].endswith("/example")
+    # Homebrew strips arbitrary environment variables before running Ruby.
+    assert "FORMULA_REFERENCE" not in os.environ
+    assert args[-1].endswith("/example") and args[-2] == "--"
     print("vendor/tools\nhomebrew/core")
     sys.exit(int(os.environ.get("FAIL_QUERY", "0")))
 elif args[0] in ("audit", "install", "test"):
