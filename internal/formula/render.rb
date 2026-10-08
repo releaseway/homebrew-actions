@@ -523,7 +523,7 @@ File.write(formula_path, content)
 
 source = distribution.fetch("sources")["source"]
 runner_matrix = if ENV.fetch("VALIDATION_MODE") == "spec"
-  [{ "platform" => "spec", "runner" => "ubuntu-latest" }]
+  [{ "platform" => "spec", "runner" => "ubuntu-24.04" }]
 elsif distribution["type"] == "source"
   [{ "platform" => "macos-arm64", "runner" => "macos-latest" }]
 else
@@ -531,7 +531,7 @@ else
     "macos-arm64" => "macos-latest",
     "macos-x86_64" => "macos-15-intel",
     "linux-arm64" => "ubuntu-24.04-arm",
-    "linux-x86_64" => "ubuntu-latest",
+    "linux-x86_64" => "ubuntu-24.04",
   }
   distribution.fetch("systems").flat_map do |system|
     platforms = system == "macos" ? %w[macos-arm64 macos-x86_64] : %w[linux-arm64 linux-x86_64]

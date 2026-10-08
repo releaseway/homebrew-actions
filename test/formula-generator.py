@@ -190,7 +190,7 @@ esac
     formula = (tap / "Formula/example.rb").read_text()
     assert f'sha256 "{"0" * 64}"' in formula
     assert "validation-mode=spec" in output
-    assert 'runner-matrix=[{"platform":"spec","runner":"ubuntu-latest"}]' in output
+    assert 'runner-matrix=[{"platform":"spec","runner":"ubuntu-24.04"}]' in output
 
     output = generate([
         "version_scheme: 1",
@@ -233,7 +233,7 @@ esac
         assert expected_block in formula
     assert "distribution=github-release" in output
     assert f"release-tag={release_tag}" in output
-    assert 'runner-matrix=[{"platform":"macos-arm64","runner":"macos-latest"},{"platform":"macos-x86_64","runner":"macos-15-intel"},{"platform":"linux-arm64","runner":"ubuntu-24.04-arm"},{"platform":"linux-x86_64","runner":"ubuntu-latest"}]' in output
+    assert 'runner-matrix=[{"platform":"macos-arm64","runner":"macos-latest"},{"platform":"macos-x86_64","runner":"macos-15-intel"},{"platform":"linux-arm64","runner":"ubuntu-24.04-arm"},{"platform":"linux-x86_64","runner":"ubuntu-24.04"}]' in output
     assert "archive-url=\n" in output
     assert "sha256=\n" in output
 
@@ -263,7 +263,7 @@ esac
     assert "  depends_on :linux\n" in formula
     assert "  on_macos do\n" not in formula
     assert "  on_linux do\n" in formula
-    assert 'runner-matrix=[{"platform":"linux-arm64","runner":"ubuntu-24.04-arm"},{"platform":"linux-x86_64","runner":"ubuntu-latest"}]' in output
+    assert 'runner-matrix=[{"platform":"linux-arm64","runner":"ubuntu-24.04-arm"},{"platform":"linux-x86_64","runner":"ubuntu-24.04"}]' in output
 
     future_tag = "formula-fixture-v9.9.9"
     output = generate([
@@ -277,7 +277,7 @@ esac
     assert f"/releases/download/{future_tag}/" in formula
     assert formula.count(f'sha256 "{"0" * 64}"') == 4
     assert "validation-mode=spec" in output
-    assert 'runner-matrix=[{"platform":"spec","runner":"ubuntu-latest"}]' in output
+    assert 'runner-matrix=[{"platform":"spec","runner":"ubuntu-24.04"}]' in output
 
     release_json.write_text(json.dumps({**base_release, "draft": True}))
     generate([
