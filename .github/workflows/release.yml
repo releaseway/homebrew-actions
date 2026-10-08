@@ -69,7 +69,7 @@ jobs:
 
       - name: Publish immutable automation release
         id: publish
-        uses: releaseway/actions@078be0809c2db65ab44788000e56d0baa1c1c02a # v0.1.3
+        uses: releaseway/actions@0dad8be512eae926535d0ba723f27be44a1bd623 # v0.3.2
         with:
           tag: ${{ steps.release.outputs.tag }}
           commit: ${{ steps.release.outputs.target }}

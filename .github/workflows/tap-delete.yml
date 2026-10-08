@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   delete:
-    runs-on: macos-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     outputs:
       state: ${{ steps.result.outputs.state }}

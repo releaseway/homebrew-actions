@@ -218,7 +218,9 @@ published immutable release, source commit, declared assets, and SHA-256 digests
 installs/tests the generated Formula on every required native runner before publishing.
 
 Linux x86_64 validation and spec audits use Ubuntu 24.04, matching the Linux arm64
-runner's Ubuntu release. On GitHub-hosted runners, validation temporarily isolates
+runner's Ubuntu release. Formula generation, tap publication and deletion also
+use Ubuntu 24.04; native installation tests keep their platform-specific runners.
+On GitHub-hosted runners, validation temporarily isolates
 preinstalled taps unrelated to the Formula or its dependencies, restoring them on
 success or failure. Local and self-hosted tap checkouts remain in place. Kernel
 sandbox capability warnings and GitHub runner capacity notices remain visible.
