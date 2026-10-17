@@ -98,6 +98,43 @@ The referenced release must already exist when `publish.yml` runs. Release creat
 asset upload, version selection, and product build ordering remain product
 responsibilities.
 
+## Command aliases
+
+Declare additional names for installed commands in the product spec:
+
+```yaml
+command_aliases:
+  ex: example
+  example-cli: example
+
+install: |
+  bin.install "example"
+
+test: |
+  system bin/"example", "--version"
+  system bin/"ex", "--version"
+  system bin/"example-cli", "--version"
+```
+
+Each key is an alias and each value names an executable already installed in `bin`.
+Names start with a letter or number and contain only letters, numbers, `.`, `_`,
+`+`, and `-`. The renderer adds relative symlinks after `install`, before
+`post_install`, for both source and GitHub Release distributions. Formula identity
+and release assets stay independent of these command names.
+
+Omitting the mapping or setting it to `{}` preserves the existing Formula.
+Null, duplicate or case-conflicting aliases, self references and alias chains fail
+validation. Installation checks every target and destination before creating any
+alias; missing or non-executable targets and existing files, directories or symlinks
+fail without overwriting them. Remove manually created alias links from `install`
+when switching to this setting. Targets created only by `post_install` are too late.
+
+The product owns command tests and their arguments. Homebrew manages linking,
+upgrades and removal; global command conflicts follow its normal policy, and
+`keg_only` still limits global command exposure. This setting adds command names
+without shell arguments or environment overrides. It does not add Formula aliases
+for `brew install` or promise behavior selected by the invocation name.
+
 ## Tap write credential
 
 Publishing requires exactly one credential with write access to the destination tap:
