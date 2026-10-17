@@ -272,7 +272,9 @@ formula.install
             moved = workspace / "moved"
             shutil.rmtree(moved, ignore_errors=True)
             installed.rename(moved)
-            assert (moved / "ex").resolve() == moved / "example"
+            assert (moved / "ex").resolve() == (moved / "example").resolve()
+            run = subprocess.run([str(moved / "ex"), "--probe"], text=True, capture_output=True)
+            assert run.returncode == 17 and run.stdout == "--probe\n"
 
     install_aliases()
     for failure in ["missing", "non-executable", "directory-target", "file", "directory", "symlink", "broken-symlink"]:
