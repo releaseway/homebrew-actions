@@ -214,8 +214,14 @@ def render_command_aliases(aliases)
 
   content = +"\n"
   aliases.each do |name, target|
-    content << "    odie #{"command_aliases.#{name}: target #{target} must be an installed executable".dump} unless (bin/#{target.dump}).file? && (bin/#{target.dump}).executable?\n"
-    content << "    odie #{"command_aliases.#{name}: destination already exists".dump} if (bin/#{name.dump}).exist? || (bin/#{name.dump}).symlink?\n"
+    %w[file? executable?].each do |predicate|
+      content << "    unless (bin/#{target.dump}).#{predicate}\n"
+      content << "      odie #{"command_aliases.#{name}: target #{target} must be an installed executable".dump}\n"
+      content << "    end\n"
+    end
+    content << "    if (bin/#{name.dump}).exist? || (bin/#{name.dump}).symlink?\n"
+    content << "      odie #{"command_aliases.#{name}: destination already exists".dump}\n"
+    content << "    end\n"
   end
   aliases.each do |name, target|
     content << "    bin.install_symlink (bin/#{target.dump}) => #{name.dump}\n"
