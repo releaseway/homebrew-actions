@@ -6,6 +6,12 @@ Generate, validate, and publish a Homebrew Formula from a product repository.
 destination tap. The product repository owns its build and GitHub Release. The tap
 repository owns published `Formula/*.rb` state.
 
+## Version
+
+[v0.4.1](https://github.com/releaseway/homebrew-actions/releases/tag/v0.4.1) uses
+`d3f1522212aca4702a32805159b0bd3e88561986`. Pin all reusable workflows to this
+full SHA.
+
 ## Quick start
 
 ### 1. Describe the Formula
@@ -33,7 +39,7 @@ Add a reusable-workflow job to the product's pull-request CI:
 ```yaml
 jobs:
   homebrew:
-    uses: releaseway/homebrew-actions/.github/workflows/check.yml@<full-sha> # v0.1.0
+    uses: releaseway/homebrew-actions/.github/workflows/check.yml@d3f1522212aca4702a32805159b0bd3e88561986 # v0.4.1
     with:
       tap-repository: owner/homebrew-tap
 ```
@@ -50,7 +56,7 @@ same immutable source commit:
 jobs:
   homebrew:
     needs: release
-    uses: releaseway/homebrew-actions/.github/workflows/publish.yml@<full-sha> # v0.1.0
+    uses: releaseway/homebrew-actions/.github/workflows/publish.yml@d3f1522212aca4702a32805159b0bd3e88561986 # v0.4.1
     with:
       tap-repository: owner/homebrew-tap
       commit: ${{ needs.release.outputs.commit }}
