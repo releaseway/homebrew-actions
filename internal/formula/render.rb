@@ -171,6 +171,64 @@ def normalize_bin_paths(value)
   value.gsub(/"#\{bin\}\/([^"\s]+)"/, 'bin/"\\1"')
 end
 
+def check_command_alias_keys(document)
+  root = document&.root
+  return unless root.is_a?(Psych::Nodes::Mapping)
+
+  fields = root.children.each_slice(2).select { |key, _| key.is_a?(Psych::Nodes::Scalar) && key.value == "command_aliases" }
+  fail_with("duplicate command_aliases field") if fields.length > 1
+  mapping = fields.first&.last
+  return unless mapping.is_a?(Psych::Nodes::Mapping)
+
+  keys = mapping.children.each_slice(2).map(&:first).select { |key| key.is_a?(Psych::Nodes::Scalar) }.map(&:value)
+  duplicate = keys.group_by(&:itself).find { |_, values| values.length > 1 }&.first
+  fail_with("duplicate command_aliases.#{duplicate}") if duplicate
+end
+
+def command_aliases(spec)
+  return {} unless spec.key?("command_aliases")
+
+  aliases = spec["command_aliases"]
+  fail_with("command_aliases must be a mapping") unless aliases.is_a?(Hash)
+  names = {}
+  aliases.each do |name, target|
+    [name, target].each do |value|
+      unless value.is_a?(String) && value.match?(/\A[A-Za-z0-9][A-Za-z0-9._+-]*\z/)
+        fail_with("command_aliases.#{name}: names and targets must be command basenames containing only letters, numbers, dot, underscore, plus, and dash")
+      end
+    end
+    folded = name.downcase
+    fail_with("command_aliases.#{name}: conflicts with alias #{names[folded]}") if names.key?(folded)
+    names[folded] = name
+  end
+  aliases.each do |name, target|
+    if names.key?(target.downcase)
+      fail_with("command_aliases.#{name}: target #{target} conflicts with alias #{names[target.downcase]}; alias chains are not supported")
+    end
+  end
+  aliases.sort.to_h
+end
+
+def render_command_aliases(aliases)
+  return "" if aliases.empty?
+
+  content = +"\n"
+  aliases.each do |name, target|
+    %w[file? executable?].each do |predicate|
+      content << "    unless (bin/#{target.dump}).#{predicate}\n"
+      content << "      odie #{"command_aliases.#{name}: target #{target} must be an installed executable".dump}\n"
+      content << "    end\n"
+    end
+    content << "    if (bin/#{name.dump}).exist? || (bin/#{name.dump}).symlink?\n"
+    content << "      odie #{"command_aliases.#{name}: destination already exists".dump}\n"
+    content << "    end\n"
+  end
+  aliases.each do |name, target|
+    content << "    bin.install_symlink (bin/#{target.dump}) => #{name.dump}\n"
+  end
+  content
+end
+
 def render_snippet_block(name, value)
   return "" if value.nil?
   content = +"  #{name} do\n"
@@ -369,7 +427,7 @@ def ensure_known_keys(spec)
   allowed = %w[
     name caveats conflicts_with dependencies deprecate disable desc homepage install keg_only
     license link_overwrite livecheck options post_install service test distribution
-    uses_from_macos version_scheme
+    uses_from_macos version_scheme command_aliases
   ]
   unknown = spec.keys - allowed
   fail_with("unsupported formula spec keys: #{unknown.join(", ")}") unless unknown.empty?
@@ -382,13 +440,16 @@ unless spec_path.start_with?(source_root + File::SEPARATOR)
 end
 
 begin
-  spec = YAML.safe_load(File.read(spec_path), permitted_classes: [], aliases: false)
+  spec_text = File.read(spec_path)
+  check_command_alias_keys(YAML.parse(spec_text))
+  spec = YAML.safe_load(spec_text, permitted_classes: [], aliases: false)
 rescue Psych::Exception => e
   fail_with("formula spec YAML is invalid: #{e.message}")
 end
 
 fail_with("formula spec must be a mapping") unless spec.is_a?(Hash)
 ensure_known_keys(spec)
+aliases = command_aliases(spec)
 version_scheme = spec.fetch("version_scheme", 0)
 unless version_scheme.is_a?(Integer) && version_scheme >= 0
   fail_with("version_scheme must be a non-negative integer")
@@ -488,6 +549,7 @@ end
 content << "  def install\n"
 content << indent_snippet(install, 4)
 content << "\n" unless content.end_with?("\n")
+content << render_command_aliases(aliases)
 content << "  end\n"
 content << "\n"
 post_install = render_method("post_install", optional_string(spec, "post_install"))

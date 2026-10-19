@@ -4,6 +4,7 @@ from hashlib import sha256
 from pathlib import Path
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 
@@ -139,8 +140,11 @@ esac
         PATH=f"{fake_bin}:{os.environ['PATH']}",
     )
 
-    def generate(distribution, expected_error=None, env_overrides=None):
-        spec_path.write_text(spec(distribution))
+    def generate(distribution, expected_error=None, env_overrides=None, install=None):
+        text = spec(distribution)
+        if install is not None:
+            text = text.replace('  bin.install "example"', install)
+        spec_path.write_text(text)
         output = workspace / "github-output"
         output.write_text("")
         env = dict(base_env, GITHUB_OUTPUT=str(output))
@@ -152,7 +156,7 @@ esac
             capture_output=True,
             check=False,
         )
-        if baseline_generator:
+        if baseline_generator and not any(line.startswith("command_aliases:") for line in distribution):
             current_formula = (tap / "Formula/example.rb").read_bytes() if result.returncode == 0 else None
             baseline_output = workspace / "baseline-output"
             baseline_output.write_text("")
@@ -176,6 +180,106 @@ esac
     assert "  depends_on :linux\n" not in formula
     assert "version_scheme" not in formula
 
+    # Omission and an empty declaration preserve the existing artifact/output bytes.
+    original_formula = (tap / "Formula/example.rb").read_bytes()
+    original_output = output
+    assert generate(["command_aliases: {}"]) == original_output
+    assert (tap / "Formula/example.rb").read_bytes() == original_formula
+    invalid_aliases = [
+        (["command_aliases: null"], "command_aliases must be a mapping"),
+        (["command_aliases: []"], "command_aliases must be a mapping"),
+        (["command_aliases: example"], "command_aliases must be a mapping"),
+        (["command_aliases:", "  ex: null"], "command_aliases.ex:"),
+        (["command_aliases:", "  1: example"], "command_aliases.1:"),
+        (["command_aliases:", "  ex: [example]"], "command_aliases.ex:"),
+        (["command_aliases:", "  ex: example", "  ex: other"], "duplicate command_aliases.ex"),
+        (["command_aliases: {}", "command_aliases: {}"], "duplicate command_aliases field"),
+        (["command_aliases:", "  ex: example", "  EX: other"], "conflicts with alias"),
+        (["command_aliases:", "  ex: EX"], "alias chains are not supported"),
+        (["command_aliases:", "  ex: short", "  short: example"], "alias chains are not supported"),
+        (["command_aliases:", "  ex: short", "  short: ex"], "alias chains are not supported"),
+    ]
+    for name in ["../ex", "/ex", "ex/other", "ex\\other", ".ex", "-ex", "ex other", "ex;echo", "ex#{1}"]:
+        for entry in [f"  {json.dumps(name)}: example", f"  ex: {json.dumps(name)}"]:
+            invalid_aliases.append((["command_aliases:", entry], "command_aliases."))
+    for declaration, error in invalid_aliases:
+        before = (tap / "Formula/example.rb").read_bytes()
+        generate(declaration, error, {"FAKE_NETWORK_FAIL": "true"})
+        assert (tap / "Formula/example.rb").read_bytes() == before
+        assert not (workspace / "github-output").read_text()
+
+    declarations = ["command_aliases:", "  zz: second", "  ex: example", "  example-cli: example"]
+    generate(declarations, install="  nil")
+    alias_formula = (tap / "Formula/example.rb").read_text()
+    assert alias_formula.index('=> "ex"') < alias_formula.index('=> "example-cli"') < alias_formula.index('=> "zz"')
+    assert alias_formula.rindex("odie ") < alias_formula.index("bin.install_symlink")
+    assert alias_formula.index("    nil") < alias_formula.index("    odie")
+
+    # Execute the generated install method, with only the small Homebrew DSL
+    # boundary supplied by the harness. Native Homebrew acceptance tests the API.
+    harness = workspace / "install.rb"
+    harness.write_text('''require "pathname"
+require "fileutils"
+class Formula
+  attr_accessor :bin
+  def self.method_missing(*) = nil
+  def self.test = nil
+  def odie(message) = raise(message)
+end
+class Pathname
+  def install_symlink(pairs)
+    pairs.each { |source, name| File.symlink(source.relative_path_from(self), self/name) }
+  end
+end
+load ARGV.fetch(0)
+formula = Example.new
+formula.bin = Pathname(ARGV.fetch(1))
+formula.install
+''')
+
+    def install_aliases(failure=None):
+        installed = workspace / "installed"
+        shutil.rmtree(installed, ignore_errors=True)
+        installed.mkdir()
+        for command in ["example", "second"]:
+            path = installed / command
+            path.write_text('#!/bin/sh\nprintf "%s\\n" "$*"\nexit 17\n')
+            path.chmod(0o755)
+        if failure == "missing":
+            (installed / "second").unlink()
+        elif failure == "non-executable":
+            (installed / "second").chmod(0o644)
+        elif failure == "directory-target":
+            (installed / "second").unlink()
+            (installed / "second").mkdir()
+        elif failure in ["file", "directory", "symlink", "broken-symlink"]:
+            destination = installed / "zz"
+            if failure == "file": destination.write_text("preserved")
+            elif failure == "directory": destination.mkdir()
+            else: destination.symlink_to("second" if failure == "symlink" else "missing")
+        result = subprocess.run(["ruby", str(harness), str(tap / "Formula/example.rb"), str(installed)], text=True, capture_output=True)
+        if failure:
+            assert result.returncode != 0 and "command_aliases.zz:" in result.stderr, result.stderr
+            assert not (installed / "ex").is_symlink(), "preflight must precede all alias creation"
+            if failure == "file": assert (installed / "zz").read_text() == "preserved"
+        else:
+            assert result.returncode == 0, result.stderr
+            for command in ["ex", "example-cli", "zz"]:
+                link = installed / command
+                assert link.is_symlink() and not link.readlink().is_absolute()
+                run = subprocess.run([str(link), "--probe", "two words"], text=True, capture_output=True)
+                assert run.returncode == 17 and run.stdout == "--probe two words\n"
+            moved = workspace / "moved"
+            shutil.rmtree(moved, ignore_errors=True)
+            installed.rename(moved)
+            assert (moved / "ex").resolve() == (moved / "example").resolve()
+            run = subprocess.run([str(moved / "ex"), "--probe"], text=True, capture_output=True)
+            assert run.returncode == 17 and run.stdout == "--probe\n"
+
+    install_aliases()
+    for failure in ["missing", "non-executable", "directory-target", "file", "directory", "symlink", "broken-symlink"]:
+        install_aliases(failure)
+
     generate(["version_scheme: 0"])
     assert "version_scheme" not in (tap / "Formula/example.rb").read_text()
     for scheme in [1, 2]:
@@ -194,6 +298,7 @@ esac
 
     output = generate([
         "version_scheme: 1",
+        *declarations,
         "distribution:",
         "  type: github-release",
         f'  tag: "{release_tag}"',
@@ -202,6 +307,7 @@ esac
     ])
     formula = (tap / "Formula/example.rb").read_text()
     assert 'version "1.2.3"' not in formula
+    assert formula.count("bin.install_symlink") == 3
     assert "  version_scheme 1\n" in formula
     assert "  depends_on :macos\n" not in formula
     assert "  depends_on :linux\n" not in formula
