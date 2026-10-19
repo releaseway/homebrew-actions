@@ -34,6 +34,9 @@ def configure(repo: Path) -> None:
         ("commit.gpgsign", "false"),
         ("tag.gpgSign", "false"),
         ("core.hooksPath", "/dev/null"),
+        # Detached maintenance can outlive assertions and race temporary cleanup.
+        ("gc.auto", "0"),
+        ("maintenance.auto", "false"),
     ]:
         subprocess.run(["git", "-C", str(repo), "config", key, value], check=True)
 
@@ -138,6 +141,7 @@ def assert_commit_and_retry(*, scheme: int | None = None, newer_scheme: int | No
             check=True,
             capture_output=True,
         )
+        configure(remote)
         subprocess.run(["git", "clone", str(remote), str(seed)], check=True, capture_output=True)
         configure(seed)
         (seed / "Formula").mkdir()
