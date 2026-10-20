@@ -520,7 +520,28 @@ formula.install
         *[f"    {platform}: example_{platform.replace('-', '_')}.tar.gz" for platform in platform_assets],
     ], env_overrides={"VALIDATION_MODE": "spec", "FAKE_NETWORK_FAIL": "true"})
     formula = (tap / "Formula/example.rb").read_text()
-    assert '  version "1.2.3"\n' in formula
+    assert '  version "1.2.3" if version.to_s != "1.2.3"\n' in formula
     assert '/app-free-v1.2.3/example_linux_arm64.tar.gz' in formula
+    # Homebrew's public getter/setter must retain URL inference when already right;
+    # assigning the same version would lose its inferred flag and fail audit.
+    version_harness = workspace / "version-harness.rb"
+    version_harness.write_text(
+        """require "json"
+class Formula
+  def self.method_missing(*) = nil
+  def self.test(*) = nil
+  def self.version(value = nil)
+    return @assigned_version || ENV.fetch("INFERRED_VERSION") if value.nil?
+    @assigned_version = value
+  end
+end
+load ARGV.fetch(0)
+puts JSON.generate({version: Example.version, assigned: !Example.instance_variable_get(:@assigned_version).nil?})
+"""
+    )
+    for inferred in ["1.2.3", "64", "1.2.2", ""]:
+        result = subprocess.run(["ruby", str(version_harness), str(tap / "Formula/example.rb")], env={**os.environ, "INFERRED_VERSION": inferred}, capture_output=True, text=True)
+        assert result.returncode == 0, result.stderr
+        assert json.loads(result.stdout) == {"version": "1.2.3", "assigned": inferred != "1.2.3"}
 
     print("GitHub Release formula generation passed")
