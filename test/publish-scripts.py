@@ -414,6 +414,18 @@ def assert_validated_bytes() -> None:
             target.write_text(text.replace("1.0.0", "1.2.3"))
             expected = sha256(target.read_bytes()).hexdigest()
             git(publisher, "add", "."); git(publisher, "commit", "-m", "candidate")
+            env = dict(os.environ, FORMULA_PATH="Formula/example.rb")
+            env.pop("FORMULA_SHA256", None)
+            missing = subprocess.run(["ruby", str(SCRIPTS / "verify-formula-bytes.rb")], cwd=publisher, env=env, capture_output=True, text=True)
+            assert missing.returncode != 0 and "required from the validated artifact" in missing.stderr
+            for invalid_digest in ["", "0" * 64]:
+                invalid = run("push-formula.sh", cwd=publisher, env={"FORMULA_PATH": "Formula/example.rb", "FORMULA_SHA256": invalid_digest, "VERSION": "1.2.3", "COMMIT": "a" * 40})
+                assert invalid.returncode != 0
+            original_candidate = target.read_bytes()
+            target.write_bytes(original_candidate + b"# unvalidated local edit\n")
+            invalid = run("push-formula.sh", cwd=publisher, env={"FORMULA_PATH": "Formula/example.rb", "FORMULA_SHA256": expected, "VERSION": "1.2.3", "COMMIT": "a" * 40})
+            assert invalid.returncode != 0 and "validated artifact" in invalid.stderr
+            target.write_bytes(original_candidate)
             if same_formula:
                 (competitor / "Formula/example.rb").write_text(text.replace('bin.install "example"', 'bin.install "unvalidated"'))
             else:
