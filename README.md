@@ -300,3 +300,5 @@ for literal candidate pins, fixture taps, retention and retries.
 ## License
 
 MIT
+
+The [same-run release guide](https://github.com/releaseway/actions/blob/main/docs/app-free-release.md) connects version preparation, GitHub publication and this existing tap workflow. Homebrew continues to use the caller's tap-scoped deploy key or explicit token; no additional GitHub App is required.
