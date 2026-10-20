@@ -225,6 +225,25 @@ and archive commit; a same-version update without identifiable source provenance
 requires the explicit override. Conflicting edits to the same Formula can still fail
 during rebase; rerun against the latest tap state.
 
+### Validated Formula bytes (unreleased)
+
+The current source freezes the generated Formula's SHA-256 before uploading it.
+Validation and publication consume that identity. Every rebase and push checks
+both the working file and the Formula blob in `HEAD` against those validated
+bytes. An automatically merged change to the same Formula can therefore stop
+publication even when Git reports no conflict. Other Formula changes remain
+eligible for bounded rebase retries.
+
+If this check fails, rerun the complete publishing workflow against the current
+tap so the candidate is generated and validated again. A retry of only the push
+step cannot certify different bytes. `allow-downgrade` controls version ordering
+and never bypasses this byte check. The v0.4.2 pins above predate this safeguard;
+adopt a published full-SHA release containing it when available.
+
+The spec currently does not accept Homebrew's `revision` field. A packaging-only
+revision at the same upstream version is not a supported update policy. Do not
+use `version_scheme` as a substitute: it changes the version numbering sequence.
+
 ## Formula ownership
 
 The spec contains product-specific Homebrew intent such as metadata, dependencies,
@@ -259,6 +278,13 @@ Direct pushes must be allowed by the destination branch policy.
 `publish.yml` uses release validation. For GitHub Release distributions it verifies the
 published immutable release, source commit, declared assets, and SHA-256 digests, then
 installs/tests the generated Formula on every required native runner before publishing.
+
+For source distributions, release validation currently runs on macOS arm64 only.
+This is not evidence of Linux or Intel execution. For GitHub Release asset
+distributions, declaring an operating system requires both its arm64 and x86_64
+assets; those declared OS/architecture pairs each run native validation. A single
+architecture per OS and a configurable source-validation matrix are not supported
+by the current spec. Spec audits alone do not prove native installation.
 
 Linux x86_64 validation and spec audits use Ubuntu 24.04, matching the Linux arm64
 runner's Ubuntu release. Formula generation, tap publication and deletion also
