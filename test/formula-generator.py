@@ -306,7 +306,7 @@ formula.install
         *[f"    {platform}: {asset.replace('1.2.3', '{version}')}" for platform, asset in platform_assets.items()],
     ])
     formula = (tap / "Formula/example.rb").read_text()
-    assert 'version "1.2.3"' not in formula
+    assert 'version "1.2.3"' in formula
     assert formula.count("bin.install_symlink") == 3
     assert "  version_scheme 1\n" in formula
     assert "  depends_on :macos\n" not in formula
@@ -510,5 +510,17 @@ formula.install
             for platform, asset in platform_assets.items()
         ],
     ], "distribution.assets.linux-arm64 may contain only")
+
+    # Architecture digits in versionless assets must never replace caller VERSION.
+    generate([
+        "distribution:",
+        "  type: github-release",
+        '  tag: "app-free-v{version}"',
+        "  assets:",
+        *[f"    {platform}: example_{platform.replace('-', '_')}.tar.gz" for platform in platform_assets],
+    ], env_overrides={"VALIDATION_MODE": "spec", "FAKE_NETWORK_FAIL": "true"})
+    formula = (tap / "Formula/example.rb").read_text()
+    assert '  version "1.2.3"\n' in formula
+    assert '/app-free-v1.2.3/example_linux_arm64.tar.gz' in formula
 
     print("GitHub Release formula generation passed")
