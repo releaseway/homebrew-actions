@@ -33,6 +33,9 @@ def assert_check_contract() -> None:
 
 def assert_publish_contract() -> None:
     text = (ROOT / ".github/workflows/publish.yml").read_text()
+    assert "formula-sha256: ${{ steps.digest.outputs.sha256 }}" in text
+    assert text.count("FORMULA_SHA256: ${{ needs.generate.outputs.formula-sha256 }}") == 3
+    assert "ruby automation/internal/scripts/verify-formula-bytes.rb" in text
     public = text.split("permissions:", 1)[0]
     inputs = public.split("secrets:", 1)[0]
 

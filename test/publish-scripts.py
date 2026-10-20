@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 import shutil
 import tempfile
+from hashlib import sha256
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "internal" / "scripts"
@@ -17,6 +18,10 @@ def formula(version: str, commit: str = "a" * 40, description: str = "example", 
 def run(script: str, *, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     merged = dict(os.environ)
     merged.update(env)
+    if script in ("commit-formula.sh", "push-formula.sh") and "FORMULA_SHA256" not in merged:
+        path = cwd / merged["FORMULA_PATH"]
+        if path.is_file():
+            merged["FORMULA_SHA256"] = sha256(path.read_bytes()).hexdigest()
     return subprocess.run(
         ["bash", str(SCRIPTS / script)],
         cwd=cwd,
@@ -381,6 +386,7 @@ def assert_scheme_policy() -> None:
 
 
 def main() -> None:
+    assert_validated_bytes()
     assert_preflight()
     assert_credentials()
     assert_commit_and_retry()
@@ -389,6 +395,40 @@ def main() -> None:
     assert_update_policy()
     assert_scheme_policy()
     print("Homebrew publish scripts passed")
+
+
+def assert_validated_bytes() -> None:
+    for same_formula in [True, False]:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            remote, publisher, competitor = [root / name for name in ["remote.git", "publisher", "competitor"]]
+            git(root, "init", "--bare", "--initial-branch=main", str(remote))
+            git(root, "clone", str(remote), str(publisher))
+            configure(publisher)
+            target = publisher / "Formula/example.rb"
+            target.parent.mkdir()
+            text = formula("1.0.0") + '\n' * 12 + 'def install\n  bin.install "example"\nend\n'
+            target.write_text(text)
+            git(publisher, "add", "."); git(publisher, "commit", "-m", "baseline"); git(publisher, "push", "origin", "main")
+            git(root, "clone", str(remote), str(competitor)); configure(competitor)
+            target.write_text(text.replace("1.0.0", "1.2.3"))
+            expected = sha256(target.read_bytes()).hexdigest()
+            git(publisher, "add", "."); git(publisher, "commit", "-m", "candidate")
+            if same_formula:
+                (competitor / "Formula/example.rb").write_text(text.replace('bin.install "example"', 'bin.install "unvalidated"'))
+            else:
+                (competitor / "Formula/other.rb").write_text("other\n")
+            git(competitor, "add", "."); git(competitor, "commit", "-m", "concurrent"); git(competitor, "push", "origin", "main")
+            before = git(competitor, "rev-parse", "HEAD")
+            result = run("push-formula.sh", cwd=publisher, env={"FORMULA_PATH": "Formula/example.rb", "FORMULA_SHA256": expected, "VERSION": "1.2.3", "COMMIT": "a" * 40})
+            if same_formula:
+                assert result.returncode != 0
+                assert "validated artifact" in result.stderr, result.stderr
+                assert git(competitor, "ls-remote", "origin", "refs/heads/main").split()[0] == before
+            else:
+                assert result.returncode == 0, result.stderr
+                git(competitor, "pull", "--ff-only")
+                assert sha256((competitor / "Formula/example.rb").read_bytes()).hexdigest() == expected
 
 
 if __name__ == "__main__":

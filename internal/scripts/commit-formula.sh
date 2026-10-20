@@ -6,12 +6,14 @@ set -euo pipefail
 : "${FORMULA:?}"
 : "${VERSION:?}"
 
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ruby "$script_dir/verify-formula-bytes.rb"
+
 if [ -z "$(git status --porcelain -- "$FORMULA_PATH")" ]; then
   echo "changed=false" >> "$GITHUB_OUTPUT"
   exit 0
 fi
 
-script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ruby "$script_dir/validate-formula-update.rb" HEAD
 
 git config user.name "github-actions[bot]"

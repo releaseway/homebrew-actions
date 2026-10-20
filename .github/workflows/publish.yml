@@ -93,6 +93,7 @@ jobs:
     outputs:
       formula: ${{ steps.formula.outputs.formula }}
       formula-path: ${{ steps.formula.outputs.formula-path }}
+      formula-sha256: ${{ steps.digest.outputs.sha256 }}
       runner-matrix: ${{ steps.formula.outputs.runner-matrix }}
       version: ${{ steps.formula.outputs.version }}
     steps:
@@ -132,6 +133,12 @@ jobs:
           version: ${{ inputs.version }}
           spec-path: ${{ inputs.spec-path }}
           validation-mode: release
+
+      - name: Freeze generated Formula bytes
+        id: digest
+        env:
+          FORMULA_PATH: tap/${{ steps.formula.outputs.formula-path }}
+        run: ruby -rdigest -e 'puts "sha256=#{Digest::SHA256.file(ENV.fetch("FORMULA_PATH")).hexdigest}"' >> "$GITHUB_OUTPUT"
 
       - name: Upload generated Formula
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -182,8 +189,12 @@ jobs:
         env:
           TAP_PATH: tap
           FORMULA: ${{ needs.generate.outputs.formula }}
+          FORMULA_PATH: tap/${{ needs.generate.outputs.formula-path }}
+          FORMULA_SHA256: ${{ needs.generate.outputs.formula-sha256 }}
           VALIDATION_MODE: release
-        run: bash automation/internal/scripts/validate-formula.sh
+        run: |
+          ruby automation/internal/scripts/verify-formula-bytes.rb
+          bash automation/internal/scripts/validate-formula.sh
 
   homebrew-check:
     if: always()
@@ -256,6 +267,7 @@ jobs:
         working-directory: tap
         env:
           FORMULA_PATH: ${{ needs.generate.outputs.formula-path }}
+          FORMULA_SHA256: ${{ needs.generate.outputs.formula-sha256 }}
           FORMULA: ${{ needs.generate.outputs.formula }}
           VERSION: ${{ needs.generate.outputs.version }}
           COMMIT: ${{ inputs.commit }}
@@ -268,6 +280,7 @@ jobs:
         env:
           TAP_BRANCH: ${{ inputs.tap-branch }}
           FORMULA_PATH: ${{ needs.generate.outputs.formula-path }}
+          FORMULA_SHA256: ${{ needs.generate.outputs.formula-sha256 }}
           VERSION: ${{ needs.generate.outputs.version }}
           COMMIT: ${{ inputs.commit }}
           ALLOW_DOWNGRADE: ${{ inputs.allow-downgrade }}
