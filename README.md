@@ -8,8 +8,8 @@ repository owns published `Formula/*.rb` state.
 
 ## Version
 
-[v0.4.2](https://github.com/releaseway/homebrew-actions/releases/tag/v0.4.2) uses
-`c1be213c09e18836142bbad3561a0feda507536a`. Pin all reusable workflows to this
+[v0.4.3](https://github.com/releaseway/homebrew-actions/releases/tag/v0.4.3) uses
+`8fe42d36a7f93a3c399461efbe571fc695d4cdc6`. Pin all reusable workflows to this
 full SHA.
 
 ## Quick start
@@ -39,7 +39,7 @@ Add a reusable-workflow job to the product's pull-request CI:
 ```yaml
 jobs:
   homebrew:
-    uses: releaseway/homebrew-actions/.github/workflows/check.yml@c1be213c09e18836142bbad3561a0feda507536a # v0.4.2
+    uses: releaseway/homebrew-actions/.github/workflows/check.yml@8fe42d36a7f93a3c399461efbe571fc695d4cdc6 # v0.4.3
     with:
       tap-repository: owner/homebrew-tap
 ```
@@ -56,7 +56,7 @@ same immutable source commit:
 jobs:
   homebrew:
     needs: release
-    uses: releaseway/homebrew-actions/.github/workflows/publish.yml@c1be213c09e18836142bbad3561a0feda507536a # v0.4.2
+    uses: releaseway/homebrew-actions/.github/workflows/publish.yml@8fe42d36a7f93a3c399461efbe571fc695d4cdc6 # v0.4.3
     with:
       tap-repository: owner/homebrew-tap
       commit: ${{ needs.release.outputs.commit }}
@@ -225,9 +225,9 @@ and archive commit; a same-version update without identifiable source provenance
 requires the explicit override. Conflicting edits to the same Formula can still fail
 during rebase; rerun against the latest tap state.
 
-### Validated Formula bytes (unreleased)
+### Validated Formula bytes
 
-The current source freezes the generated Formula's SHA-256 before uploading it.
+Starting with v0.4.3, publishing freezes the generated Formula's SHA-256 before uploading it.
 Validation and publication consume that identity. Every rebase and push checks
 both the working file and the Formula blob in `HEAD` against those validated
 bytes. An automatically merged change to the same Formula can therefore stop
@@ -237,8 +237,7 @@ eligible for bounded rebase retries.
 If this check fails, rerun the complete publishing workflow against the current
 tap so the candidate is generated and validated again. A retry of only the push
 step cannot certify different bytes. `allow-downgrade` controls version ordering
-and never bypasses this byte check. The v0.4.2 pins above predate this safeguard;
-adopt a published full-SHA release containing it when available.
+and never bypasses this byte check. The v0.4.3 pins above include this safeguard.
 
 The spec currently does not accept Homebrew's `revision` field. A packaging-only
 revision at the same upstream version is not a supported update policy. Do not
