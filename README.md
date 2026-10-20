@@ -8,8 +8,8 @@ repository owns published `Formula/*.rb` state.
 
 ## Version
 
-[v0.4.1](https://github.com/releaseway/homebrew-actions/releases/tag/v0.4.1) uses
-`d3f1522212aca4702a32805159b0bd3e88561986`. Pin all reusable workflows to this
+[v0.4.2](https://github.com/releaseway/homebrew-actions/releases/tag/v0.4.2) uses
+`c1be213c09e18836142bbad3561a0feda507536a`. Pin all reusable workflows to this
 full SHA.
 
 ## Quick start
@@ -39,7 +39,7 @@ Add a reusable-workflow job to the product's pull-request CI:
 ```yaml
 jobs:
   homebrew:
-    uses: releaseway/homebrew-actions/.github/workflows/check.yml@d3f1522212aca4702a32805159b0bd3e88561986 # v0.4.1
+    uses: releaseway/homebrew-actions/.github/workflows/check.yml@c1be213c09e18836142bbad3561a0feda507536a # v0.4.2
     with:
       tap-repository: owner/homebrew-tap
 ```
@@ -56,7 +56,7 @@ same immutable source commit:
 jobs:
   homebrew:
     needs: release
-    uses: releaseway/homebrew-actions/.github/workflows/publish.yml@d3f1522212aca4702a32805159b0bd3e88561986 # v0.4.1
+    uses: releaseway/homebrew-actions/.github/workflows/publish.yml@c1be213c09e18836142bbad3561a0feda507536a # v0.4.2
     with:
       tap-repository: owner/homebrew-tap
       commit: ${{ needs.release.outputs.commit }}
