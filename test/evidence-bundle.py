@@ -103,6 +103,18 @@ class BundleTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'expired'):
             self.collect()
 
+    def test_real_json_transport_does_not_archive_api_json_as_zip(self):
+        globals_ = self.module['verify'].__globals__
+        def transport(path):
+            if '/artifacts/' in path and path.endswith('/zip'):
+                return self.raw[int(path.split('/artifacts/')[1].split('/')[0])]
+            return json.dumps(self.get(path)).encode()
+        globals_['api_bytes'] = transport
+        globals_['api_json'] = lambda path: B['parse_json'](globals_['api_bytes'](path))
+        bundle = self.collect()
+        self.assertEqual(len(bundle['archives']), 2)
+        self.assertEqual(self.verify(bundle)['state'], 'consistency_verified')
+
     def test_json_duplicates_and_zip_contract(self):
         with self.assertRaisesRegex(ValueError, 'duplicate'):
             B['parse_json']('{"id":1,"id":2}')

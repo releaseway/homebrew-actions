@@ -152,6 +152,9 @@ def collect(module, repository, candidate, run_ids, distribution_run, tag, check
 
     def get_bytes(path):
         raw = live_bytes(path)
+        # api_json also uses this transport. Only artifact downloads are ZIPs.
+        if not re.fullmatch(r'repos/[^/]+/[^/]+/actions/artifacts/[1-9][0-9]*/zip', path):
+            return raw
         require(0 < len(raw) <= MAX_ZIP, 'artifact ZIP exceeds limit')
         archives[path] = {'sha256': sha256(raw), 'base64': base64.b64encode(raw).decode()}
         return raw
