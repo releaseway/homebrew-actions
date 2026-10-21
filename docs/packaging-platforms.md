@@ -17,11 +17,14 @@ name: example
 desc: Example CLI
 license: MIT
 revision: 0
+
 platforms: [macos-arm64, macos-x86_64, linux-arm64, linux-x86_64]
 dependencies:
   build: [go]
+
 install: |
   system "go", "build", *std_go_args, "./cmd/example"
+
 test: |
   system bin/"example", "--version"
 ```
@@ -57,14 +60,18 @@ For a Linux x86_64-only product, declare exactly that platform and asset:
 name: example
 desc: Example CLI
 license: MIT
+
 platforms: [linux-x86_64]
+
 distribution:
   type: github-release
   tag: "v{version}"
   assets:
     linux-x86_64: example_linux_x86_64.tar.gz
+
 install: |
   bin.install "example"
+
 test: |
   system bin/"example", "--version"
 ```
@@ -96,14 +103,17 @@ Pass both full SHAs through outputs of your own preparation job:
 jobs:
   homebrew:
     needs: packaging
+
     permissions:
       contents: read
+
     uses: releaseway/homebrew-actions/.github/workflows/publish.yml@<homebrew-actions-sha>
     with:
       tap-repository: owner/homebrew-tap
       commit: ${{ needs.packaging.outputs.source-commit }}
       spec-commit: ${{ needs.packaging.outputs.spec-commit }}
       version: "1.2.3"
+
     secrets:
       tap_deploy_key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
 ```

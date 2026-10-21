@@ -53,6 +53,7 @@ jobs:
   homebrew:
     permissions:
       contents: read
+
     uses: releaseway/homebrew-actions/.github/workflows/check.yml@<homebrew-actions-sha>
     with:
       tap-repository: owner/homebrew-tap
@@ -70,13 +71,16 @@ same immutable source commit:
 jobs:
   homebrew:
     needs: release
+
     permissions:
       contents: read
+
     uses: releaseway/homebrew-actions/.github/workflows/publish.yml@<homebrew-actions-sha>
     with:
       tap-repository: owner/homebrew-tap
       commit: ${{ needs.release.outputs.commit }}
       version: ${{ needs.release.outputs.version }}
+
     secrets:
       tap_deploy_key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
 ```
@@ -148,7 +152,9 @@ Omitting the mapping or setting it to `{}` preserves the existing Formula.
 Null, duplicate or case-conflicting aliases, self references and alias chains fail
 validation. Installation checks every target and destination before creating any
 alias; missing or non-executable targets and existing files, directories or symlinks
-fail without overwriting them. Remove manually created alias links from `install`
+fail without overwriting them.
+
+Remove manually created alias links from `install`
 when switching to this setting. Targets created only by `post_install` are too late.
 
 The product owns command tests and their arguments. Homebrew manages linking,
@@ -205,7 +211,9 @@ when the source commit is unchanged. Release ordering compares
 omitted revision meaning `0`. See
 [revision updates](docs/packaging-platforms.md#publish-a-packaging-fix-without-changing-upstream-source)
 for packaging-only upgrades. The spec's optional `version_scheme` must be a
-non-negative integer; omitting it means `0`. To restart version numbering, add
+non-negative integer; omitting it means `0`.
+
+To restart version numbering, add
 it to the product spec:
 
 ```yaml
