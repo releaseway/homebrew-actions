@@ -1,0 +1,80 @@
+name: Archive release evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Allowlisted original stable release tag
+        required: true
+        type: string
+      publication-run:
+        description: Original successful release workflow run
+        required: true
+        type: string
+      acceptance-runs:
+        description: Original successful acceptance run IDs, comma-separated
+        required: true
+        type: string
+      distribution-run:
+        description: Original full distribution run (actions only)
+        default: ""
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: archive-release-evidence-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  archive:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Collect original approval or authenticate frozen archive
+        id: archive
+        env:
+          GH_TOKEN: ${{ secrets.RELEASEWAY_EVIDENCE_TOKEN || github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          PUBLICATION_RUN: ${{ inputs.publication-run }}
+          ACCEPTANCE_RUNS: ${{ inputs.acceptance-runs }}
+          DISTRIBUTION_RUN: ${{ inputs.distribution-run }}
+        run: |
+          set -euo pipefail
+          extra=()
+          if [[ -n "$DISTRIBUTION_RUN" ]]; then
+            extra+=(--distribution-run "$DISTRIBUTION_RUN")
+          fi
+          python3 scripts/prepare-archive-evidence.py \
+            --repository "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" \
+            --publication-run "$PUBLICATION_RUN" --acceptance-runs "$ACCEPTANCE_RUNS" \
+            "${extra[@]}"
+      - name: Bind sidecar tag to reviewed collector
+        if: steps.archive.outputs.state == 'prepared'
+        uses: releaseway/actions/prepare@2abdf26c6f01c1e49da4ba5d85253847fe721fd9 # v0.6.3
+        with:
+          mode: tag
+          tag: evidence-${{ inputs.tag }}
+          commit: ${{ steps.archive.outputs.collector }}
+      - name: Publish immutable evidence sidecar
+        if: steps.archive.outputs.state == 'prepared'
+        uses: releaseway/actions@2abdf26c6f01c1e49da4ba5d85253847fe721fd9 # v0.6.3
+        with:
+          tag: evidence-${{ inputs.tag }}
+          commit: ${{ steps.archive.outputs.collector }}
+          title: Evidence for ${{ inputs.tag }}
+          notes: file
+          notes-file: scripts/archive-release-notes.md
+          assets: releaseway-evidence.json
+          prerelease: "true"
+          latest: "false"
+      - name: Authenticate published archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: python3 scripts/verify-archived-release.py --repository "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG"

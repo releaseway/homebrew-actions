@@ -138,5 +138,47 @@ class BundleTests(unittest.TestCase):
                 self.assertEqual((ROOT / 'scripts' / name).read_bytes(), (sibling / 'scripts' / name).read_bytes(), repo + '/' + name)
 
 
+class ArchiveTests(unittest.TestCase):
+    def setUp(self):
+        self.prepare_module = runpy.run_path(str(ROOT / 'scripts/prepare-archive-evidence.py'))
+        self.archive = self.prepare_module['A']
+        self.prepare = self.prepare_module['prepare']
+        self.expected = B['policy_data']('legacy-20261020')['releases']['releaseway/npm-actions']
+
+    def invoke(self, **changes):
+        values = dict(repository='releaseway/npm-actions', tag=self.expected['tag'],
+                      publication_run=self.expected['publication_run'],
+                      run_ids=self.expected['acceptance_runs'], distribution_run=None, output='unused')
+        values.update(changes)
+        return self.prepare(**values)
+
+    def test_legacy_allowlist_rejects_unrelated_inputs_before_network(self):
+        self.archive['release'] = lambda *a, **k: self.fail('must reject before network')
+        for changes in [dict(tag='v0.7.2'), dict(publication_run=1), dict(run_ids=[1, 2]), dict(distribution_run=1)]:
+            with self.assertRaisesRegex(ValueError, 'allowlisted'):
+                self.invoke(**changes)
+
+    def test_frozen_sidecar_is_authenticated_without_original_api(self):
+        calls = []
+        self.archive['release'] = lambda repo, tag, **kw: {'draft': False}
+        self.archive['authenticate'] = lambda *a: calls.append(a)
+        self.archive['tag_commit'] = lambda *a: 'c' * 40
+        result = self.invoke()
+        self.assertEqual(result, dict(state='existing', collector='c' * 40))
+        self.assertEqual(len(calls), 1)
+
+    def test_draft_missing_asset_is_explicit_conflict(self):
+        self.archive['release'] = lambda *a, **k: {'draft': True, 'assets': []}
+        with self.assertRaisesRegex(ValueError, 'archive_conflict'):
+            self.invoke()
+
+    def test_sidecar_workflow_keeps_stable_latest_and_scope(self):
+        workflow = (ROOT / '.github/workflows/archive-release-evidence.yml').read_text()
+        for text in ['prerelease: "true"', 'latest: "false"', 'mode: tag', 'commit: ${{ steps.archive.outputs.collector }}',
+                     'assets: releaseway-evidence.json', 'notes: file', 'verify-archived-release.py']:
+            self.assertIn(text, workflow)
+        self.assertNotIn('pull_request', workflow)
+
+
 if __name__ == '__main__':
     unittest.main()

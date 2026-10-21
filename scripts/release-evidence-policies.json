@@ -7,5 +7,46 @@
     ],
     "description": "Exact-candidate push CI and fresh scenario receipts; actions additionally requires distribution CI and six native/Pages receipts.",
     "acceptance_schema": 1
+  },
+  "legacy-20261020": {
+    "repositories": [
+      "releaseway/actions",
+      "releaseway/npm-actions",
+      "releaseway/homebrew-actions"
+    ],
+    "releases": {
+      "releaseway/actions": {
+        "tag": "v0.6.3",
+        "candidate": "2abdf26c6f01c1e49da4ba5d85253847fe721fd9",
+        "release_id": 418469766,
+        "publication_run": 39435606803,
+        "acceptance_runs": [
+          39434677329
+        ],
+        "distribution_run": 39434672682
+      },
+      "releaseway/npm-actions": {
+        "tag": "v0.7.1",
+        "candidate": "b9b00e1a5e5d4e055d34e4daa663909e4d65e21c",
+        "release_id": 418469258,
+        "publication_run": 39435177455,
+        "acceptance_runs": [
+          39434367424,
+          39434330224
+        ],
+        "distribution_run": null
+      },
+      "releaseway/homebrew-actions": {
+        "tag": "v0.4.3",
+        "candidate": "8fe42d36a7f93a3c399461efbe571fc695d4cdc6",
+        "release_id": 418468456,
+        "publication_run": 39435554744,
+        "acceptance_runs": [
+          39434719993
+        ],
+        "distribution_run": null
+      }
+    },
+    "acceptance_schema": 1
   }
 }

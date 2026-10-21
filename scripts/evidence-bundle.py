@@ -235,6 +235,26 @@ def verify_bundle(bundle, repository, tag, candidate, module=None):
             and collection['workflow']['run_id'] > 0 and type(collection['workflow']['run_attempt']) is int
             and collection['workflow']['run_attempt'] > 0, 'invalid collection workflow identity')
     require(re.fullmatch(r'[0-9a-f]{40}', collection['workflow']['head_sha']), 'invalid collection commit')
+    if policy['id'] == 'legacy-20261020':
+        expected = expected_policy['releases'][repository]
+        require(collection['mode'] == 'backfill' and tag == expected['tag'] and candidate == expected['candidate'],
+                'legacy policy applies only to allowlisted original releases')
+        require(sorted(bundle['requests']['acceptance_runs']) == sorted(expected['acceptance_runs'])
+                and bundle['requests']['distribution_run'] == expected['distribution_run'], 'original approval input mismatch')
+        original = collection['original_release']
+        require(original['id'] == expected['release_id'] and original['tag_name'] == tag and original['immutable'] is True
+                and original['draft'] is False and original['prerelease'] is False and original['published_at'],
+                'original release snapshot mismatch')
+        publication = collection['publication']
+        require(publication['id'] == expected['publication_run'] and publication['head_sha'] == candidate
+                and publication['repository']['full_name'] == repository and publication['path'] == '.github/workflows/release.yml'
+                and publication['event'] == 'workflow_dispatch' and publication['status'] == 'completed'
+                and publication['conclusion'] == 'success' and type(publication['run_attempt']) is int
+                and publication['run_attempt'] > 0, 'original publication snapshot mismatch')
+        require(collection['publication_jobs'] and all(job['status'] == 'completed'
+                for job in collection['publication_jobs']), 'original publication jobs incomplete')
+    else:
+        require(collection['mode'] == 'pre-publication', 'fresh policy cannot backfill an original release')
     if module is None:
         module = runpy.run_path(str(ROOT / 'verify-release-evidence.py'))
     globals_ = module['verify'].__globals__
