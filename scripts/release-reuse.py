@@ -20,7 +20,8 @@ def policy():
 
 def checker(repository, commit):
     value = B['checker_identity'](repository, commit, B['current_policy'](repository))
-    for name in ('release-reuse.py', 'release-inputs.py', 'ci-contract.py', 'prepare-release-evidence.py', 'verify-archived-release.py'):
+    for name in ('release-reuse.py', 'release-inputs.py', 'ci-contract.py', 'prepare-release-evidence.py',
+                 'verify-archived-release.py', 'ci-mode.py', 'ci-gate.py', 'check-docs.py', 'verify-tag-ci.py'):
         value['files'][name] = B['sha256']((ROOT / name).read_bytes())
     return value
 
@@ -78,6 +79,15 @@ def verify(bundle, repository, tag, candidate):
         original_jobs = [job for path, value in original['snapshots'].items()
                          if path.startswith(jobs_prefix) for job in value['jobs']]
         require(bundle['ci']['jobs'] == original_jobs, 'full CI job snapshot differs')
+        if repository == 'releaseway/actions':
+            distribution_id = original['result']['distribution_ci_run_id']
+            distribution_path = f'repos/{repository}/actions/runs/{distribution_id}'
+            distribution_run = original['snapshots'][distribution_path]
+            prefix = distribution_path + '/attempts/' + str(distribution_run['run_attempt']) + '/jobs?'
+            distribution_jobs = [job for path, value in original['snapshots'].items()
+                                 if path.startswith(prefix) for job in value['jobs']]
+            C['verify'](dict(contract=C['CONTRACT'], mode='full', run=distribution_run, jobs=distribution_jobs),
+                        repository, candidate, 'full', workflow='distribution.yml')
         require(bundle['inputs']['commit'] == candidate, 'full input source differs')
         I['manifest'](bundle['inputs'])
     elif mode == 'equivalent':
