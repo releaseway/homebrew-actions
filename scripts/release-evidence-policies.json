@@ -1,0 +1,11 @@
+{
+  "release-v1": {
+    "repositories": [
+      "releaseway/actions",
+      "releaseway/homebrew-actions",
+      "releaseway/npm-actions"
+    ],
+    "description": "Exact-candidate push CI and fresh scenario receipts; actions additionally requires distribution CI and six native/Pages receipts.",
+    "acceptance_schema": 1
+  }
+}

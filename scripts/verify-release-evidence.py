@@ -8,6 +8,9 @@ import subprocess
 import zipfile
 from pathlib import Path, PurePosixPath
 import runpy
+import os
+
+BUNDLE = runpy.run_path(str(Path(__file__).with_name('evidence-bundle.py')))
 
 verify_distribution_receipts = runpy.run_path(str(Path(__file__).with_name('verify-distribution-receipts.py')))['verify_receipts']
 
@@ -34,7 +37,7 @@ def api_bytes(path):
 
 
 def api_json(path):
-    return json.loads(api_bytes(path))
+    return BUNDLE['parse_json'](api_bytes(path))
 
 
 def pages(path, key):
@@ -55,11 +58,7 @@ def successful_run(run, repository, sha, workflow):
 
 
 def read_evidence(archive):
-    with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
-        files = bundle.infolist()
-        require(len(files) == 1 and files[0].filename == 'acceptance.json', 'artifact must contain only acceptance.json')
-        require(files[0].file_size <= 100 * 1024, 'acceptance.json too large')
-        return json.loads(bundle.read(files[0]))
+    return BUNDLE['receipts'](archive, 'acceptance')[0]
 
 
 def require_ci(repository, candidate, workflow):
@@ -71,7 +70,7 @@ def require_ci(repository, candidate, workflow):
 
 
 def verify_distribution(candidate, run_id):
-    require(isinstance(run_id, int) and run_id > 0, 'full distribution/Pages acceptance run is required')
+    require(type(run_id) is int and run_id > 0, 'full distribution/Pages acceptance run is required')
     fixture = 'releaseway/release-fixture'
     run = api_json(f'repos/{fixture}/actions/runs/{run_id}')
     require(run['id'] == run_id and run['event'] == 'workflow_dispatch', 'distribution run identity/event mismatch')
@@ -81,14 +80,7 @@ def verify_distribution(candidate, run_id):
     require(len(matching) == 1, 'current distribution attempt artifact missing or ambiguous')
     artifact = matching[0]
     require(not artifact['expired'] and 0 < artifact['size_in_bytes'] <= 1024 * 1024, 'distribution artifact expired or too large')
-    with zipfile.ZipFile(io.BytesIO(api_bytes(f'repos/{fixture}/actions/artifacts/{artifact["id"]}/zip'))) as bundle:
-        files = [f for f in bundle.infolist() if not f.is_dir()]
-        require(len(files) == 6 and len({f.filename for f in files}) == 6, 'six unique distribution receipts required')
-        receipts = []
-        for f in files:
-            path = PurePosixPath(f.filename)
-            require(not path.is_absolute() and '..' not in path.parts and '\\' not in f.filename and path.name == 'receipt.json' and f.file_size <= 100 * 1024, 'invalid distribution receipt member')
-            receipts.append(json.loads(bundle.read(f)))
+    receipts = BUNDLE['receipts'](api_bytes(f'repos/{fixture}/actions/artifacts/{artifact["id"]}/zip'), 'distribution')
     verify_distribution_receipts(candidate, run['head_sha'], run_id, run['run_attempt'], receipts)
     return {'run_id': run_id, 'run_attempt': run['run_attempt'], 'artifact_id': artifact['id']}
 
@@ -105,7 +97,7 @@ def verify(repository, candidate, run_ids, distribution_run_id=None):
     seen = {}
     accepted = []
     for run_id in run_ids:
-        require(isinstance(run_id, int) and run_id > 0, 'invalid acceptance run ID')
+        require(type(run_id) is int and run_id > 0, 'invalid acceptance run ID')
         run = api_json(f'repos/{fixture}/actions/runs/{run_id}')
         require(run['id'] == run_id and run['event'] == 'workflow_dispatch', 'acceptance run identity/event mismatch')
         artifacts = list(pages(f'repos/{fixture}/actions/runs/{run_id}/artifacts', 'artifacts'))
@@ -151,9 +143,19 @@ if __name__ == '__main__':
     parser.add_argument('--candidate', required=True)
     parser.add_argument('--acceptance-runs', required=True, help='Comma-separated successful fixture workflow run IDs')
     parser.add_argument('--distribution-run', type=int, help='Full exact-candidate distribution/Pages fixture run; required for actions')
+    parser.add_argument('--bundle', help='Atomically save original ZIPs and verified snapshots')
+    parser.add_argument('--release-tag', help='Release tag; required with --bundle')
     args = parser.parse_args()
     try:
-        result = verify(args.repository, args.candidate, [int(value.strip()) for value in args.acceptance_runs.split(',')], args.distribution_run)
+        run_ids = [int(value.strip()) for value in args.acceptance_runs.split(',')]
+        if args.bundle:
+            checker = BUNDLE['checker_identity'](args.repository, os.environ.get('GITHUB_SHA', '').lower())
+            result, bundle = BUNDLE['collect'](globals(), args.repository, args.candidate, run_ids, args.distribution_run,
+                                               args.release_tag, checker, BUNDLE['collection_identity'](args.repository))
+            BUNDLE['atomic_write'](args.bundle, BUNDLE['canonical'](bundle))
+        else:
+            require(args.release_tag is None, '--release-tag requires --bundle')
+            result = verify(args.repository, args.candidate, run_ids, args.distribution_run)
         print(json.dumps(result, indent=2))
-    except (ValueError, KeyError, TypeError, zipfile.BadZipFile, subprocess.TimeoutExpired) as error:
+    except (ValueError, KeyError, TypeError, OSError, zipfile.BadZipFile, subprocess.TimeoutExpired) as error:
         parser.exit(1, f'Release readiness failed: {error}\n')
