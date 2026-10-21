@@ -8,6 +8,22 @@
     "description": "Exact-candidate push CI and fresh scenario receipts; actions additionally requires distribution CI and six native/Pages receipts.",
     "acceptance_schema": 1
   },
+  "homebrew-platforms-v2": {
+    "repositories": ["releaseway/homebrew-actions"],
+    "description": "Exact-candidate push CI, legacy public acceptance and revision/platform acceptance with six provider-bound original native ZIPs and sixteen native receipts.",
+    "acceptance_schemas": {"homebrew-public": 1, "homebrew-revision-platforms": 2},
+    "required_cases": [
+      "source-install-macos-arm64", "revision-upgrade-macos-arm64", "unsupported-macos-arm64",
+      "source-install-macos-x86_64", "revision-upgrade-macos-x86_64", "unsupported-macos-x86_64",
+      "source-install-linux-arm64", "revision-upgrade-linux-arm64", "unsupported-linux-arm64",
+      "source-install-linux-x86_64", "revision-upgrade-linux-x86_64", "unsupported-linux-x86_64",
+      "revision-decrease-rejected", "source-replacement-rejected", "missing-asset-rejected",
+      "missing-receipt-rejected", "native-arch-mismatch-rejected", "revision-rerun",
+      "prebuilt-linux", "prebuilt-macos", "prebuilt-mixed"
+    ],
+    "native_invocations": 6,
+    "native_receipts": 16
+  },
   "legacy-20261020": {
     "repositories": [
       "releaseway/actions",

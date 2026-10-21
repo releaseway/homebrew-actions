@@ -32,6 +32,11 @@ def sha256(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
+def timestamp(value):
+    require(isinstance(value, str) and datetime.fromisoformat(value.replace('Z', '+00:00')).utcoffset() is not None,
+            'invalid evidence timestamp')
+
+
 def unique_object(pairs):
     result = {}
     for key, value in pairs:
@@ -72,7 +77,8 @@ def receipts(raw, kind):
             require(not member.is_dir() and not path.is_absolute() and '..' not in path.parts
                     and '\\' not in name and not (member.external_attr >> 16 & 0o170000) == 0o120000,
                     'invalid artifact member path')
-            require((path.name == 'receipt.json' if kind == 'distribution' else name == 'acceptance.json'),
+            require((path.name == 'receipt.json' if kind == 'distribution' else
+                     name == ('homebrew-validation.json' if kind == 'native' else 'acceptance.json')),
                     'unexpected artifact member')
             require(member.file_size <= 100 * 1024, 'receipt exceeds limit')
             item = parse_json(archive.read(member))
@@ -85,6 +91,10 @@ def policy_data(policy_id):
     policies = parse_json(POLICY_FILE.read_bytes())
     require(policy_id in policies, 'unsupported policy')
     return policies[policy_id]
+
+
+def current_policy(repository):
+    return 'homebrew-platforms-v2' if repository == 'releaseway/homebrew-actions' else 'release-v1'
 
 
 RUN_FIELDS = ('id', 'run_attempt', 'workflow_id', 'head_sha', 'head_branch', 'path', 'event', 'status',
@@ -111,10 +121,12 @@ def snapshot(value):
     return run_snapshot(value)
 
 
-def checker_identity(repository, commit):
+def checker_identity(repository, commit, policy_id='release-v1'):
     require(re.fullmatch(r'[0-9a-f]{40}', commit or ''), 'checker commit must be a full SHA')
     names = ('verify-release-evidence.py', 'verify-distribution-receipts.py', 'evidence-bundle.py',
              'verify-evidence-bundle.py', 'release-evidence-policies.json')
+    if policy_id == 'homebrew-platforms-v2':
+        names += ('verify-homebrew-features.py', 'verify-homebrew-native.py')
     return {'repository': repository, 'commit': commit,
             'files': {name: sha256((ROOT / name).read_bytes()) for name in names}}
 
@@ -162,7 +174,7 @@ def collect(module, repository, candidate, run_ids, distribution_run, tag, check
     globals_ = module['verify'].__globals__
     globals_['api_json'], globals_['api_bytes'] = get_json, get_bytes
     try:
-        result = module['verify'](repository, candidate, run_ids, distribution_run)
+        result = module['verify'](repository, candidate, run_ids, distribution_run, policy_id=policy_id)
         selected = [(repository, result['ci_run_id'])]
         if 'distribution_ci_run_id' in result:
             selected.append((repository, result['distribution_ci_run_id']))
@@ -226,15 +238,21 @@ def verify_bundle(bundle, repository, tag, candidate, module=None):
         artifact_id = int(path.split('/artifacts/')[1].split('/')[0])
         matching = [a for response in responses.values() for a in response.get('artifacts', []) if a['id'] == artifact_id]
         require(len(matching) == 1 and matching[0]['digest'] == 'sha256:' + sha256(raw), 'provider digest mismatch')
-        receipts(raw, 'distribution' if matching[0]['name'].startswith('distribution-evidence-') else 'acceptance')
+        require(type(matching[0]['size_in_bytes']) is int and 0 < matching[0]['size_in_bytes'] <= MAX_ZIP, 'invalid provider artifact size')
+        for key in ('created_at', 'expires_at'):
+            timestamp(matching[0][key])
+        name = matching[0]['name']
+        kind = 'distribution' if name.startswith('distribution-evidence-') else 'native' if name.startswith('homebrew-validation-') else 'acceptance'
+        receipts(raw, kind)
         decoded[path] = raw
     checker = bundle['checker']
     require(checker['repository'] in expected_policy['repositories'] and re.fullmatch(r'[0-9a-f]{40}', checker['commit']), 'invalid checker identity')
-    require(set(checker['files']) == set(checker_identity(repository, candidate)['files']), 'checker file inventory mismatch')
+    require(set(checker['files']) == set(checker_identity(repository, candidate, policy['id'])['files']), 'checker file inventory mismatch')
     require(all(re.fullmatch(r'[0-9a-f]{64}', value) for value in checker['files'].values()), 'invalid checker digest')
     collection = bundle['collection']
     require(len(canonical(responses)) + len(canonical(collection)) <= MAX_SNAPSHOTS, 'API snapshots exceed limit')
     require(collection['mode'] in ('pre-publication', 'backfill') and collection['collected_at'], 'invalid collection mode/time')
+    timestamp(collection['collected_at'])
     require(collection['workflow']['repository'] == repository and type(collection['workflow']['run_id']) is int
             and collection['workflow']['run_id'] > 0 and type(collection['workflow']['run_attempt']) is int
             and collection['workflow']['run_attempt'] > 0, 'invalid collection workflow identity')
@@ -275,7 +293,7 @@ def verify_bundle(bundle, repository, tag, candidate, module=None):
         return decoded[path]
     globals_['api_json'], globals_['api_bytes'] = offline_json, offline_bytes
     try:
-        result = module['verify'](repository, candidate, bundle['requests']['acceptance_runs'], bundle['requests']['distribution_run'])
+        result = module['verify'](repository, candidate, bundle['requests']['acceptance_runs'], bundle['requests']['distribution_run'], policy_id=policy['id'])
         require(result == bundle['result'], 'approval result mismatch')
         for response in responses.values():
             for run in response.get('workflow_runs', []):
@@ -294,6 +312,9 @@ def verify_bundle(bundle, repository, tag, candidate, module=None):
             run = offline_json(path)
             require(type(run['id']) is int and run['id'] == run_id and type(run['run_attempt']) is int
                     and run['run_attempt'] > 0, 'invalid provider run identity')
+            require(type(run['workflow_id']) is int and run['workflow_id'] > 0, 'provider workflow ID missing')
+            for key in ('created_at', 'updated_at', 'run_started_at'):
+                timestamp(run[key])
             require(run['status'] == 'completed' and run['conclusion'] == 'success', 'provider run incomplete')
             if run_id in ci_ids and repo == repository:
                 listed = [item for response in responses.values() for item in response.get('workflow_runs', [])
@@ -301,6 +322,9 @@ def verify_bundle(bundle, repository, tag, candidate, module=None):
                 require(len(listed) == 1 and listed[0] == run, 'CI list/detail snapshot mismatch')
             jobs = list(module['pages'](path + '/attempts/' + str(run['run_attempt']) + '/jobs', 'jobs'))
             require(jobs and all(job['status'] == 'completed' for job in jobs), 'provider jobs incomplete')
+            require(all(set(JOB_FIELDS) <= set(job) and type(job['id']) is int and job['id'] > 0
+                        and isinstance(job['name'], str) and job['name'] and isinstance(job['labels'], list)
+                        and isinstance(job['conclusion'], str) and job['conclusion'] for job in jobs), 'provider job metadata missing')
         require(used_responses == set(responses) and used_archives == set(archives), 'unexpected evidence snapshot or archive')
         return {'state': 'consistency_verified', 'candidate_repository': repository, 'candidate_sha': candidate, 'tag': tag}
     finally:

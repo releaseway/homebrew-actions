@@ -26,11 +26,14 @@ class BundleTests(unittest.TestCase):
         self.h.ci['run_attempt'] = 1
         self.raw = {n: self.h.api_bytes(f'repos/fixture/actions/artifacts/{n}/zip') for n in [2, 3]}
         for n in [2, 3]:
-            self.h.artifacts[n][0].update(digest='sha256:' + hashlib.sha256(self.raw[n]).hexdigest())
+            self.h.artifacts[n][0].update(digest='sha256:' + hashlib.sha256(self.raw[n]).hexdigest(),
+                created_at='2026-10-21T00:00:00Z', expires_at='2026-11-20T00:00:00Z')
         original = self.h.api_json
         def get(path):
             if '/jobs?' in path:
-                return {'jobs': [dict(id=100, name='checks', status='completed', conclusion='success')]}
+                return {'jobs': [dict(id=100, name='checks', status='completed', conclusion='success',
+                    started_at='2026-10-21T00:00:01Z', completed_at='2026-10-21T00:10:00Z',
+                    runner_name='fixture', runner_group_name='', labels=['ubuntu-24.04'])]}
             if path.endswith('/runs/1'):
                 return self.h.ci
             return original(path)
@@ -131,6 +134,25 @@ class BundleTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             B['receipts'](raw.getvalue(), 'acceptance')
 
+    def test_provider_run_metadata_is_mandatory(self):
+        good = self.collect()
+        path = 'repos/releaseway/npm-actions-fixture/actions/runs/2'
+        for key in ['workflow_id', 'created_at', 'updated_at', 'run_started_at']:
+            bad = copy.deepcopy(good)
+            del bad['snapshots'][path][key]
+            with self.subTest(key=key), self.assertRaises((ValueError, KeyError)):
+                self.verify(bad)
+        for value in ['not-a-time', '2026-10-21T00:00:00', True]:
+            bad = copy.deepcopy(good)
+            bad['snapshots'][path]['created_at'] = value
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.verify(bad)
+        bad = copy.deepcopy(good); bad['collection']['collected_at'] = 'not-a-time'
+        with self.assertRaises(ValueError): self.verify(bad)
+        bad = copy.deepcopy(good)
+        next(value for value in bad['snapshots'].values() if 'jobs' in value)['jobs'][0].pop('labels')
+        with self.assertRaisesRegex(ValueError, 'metadata'): self.verify(bad)
+
     def test_atomic_existing_file_and_size_limit(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'evidence.json'
@@ -149,6 +171,11 @@ class BundleTests(unittest.TestCase):
                          'verify-evidence-bundle.py', 'release-evidence-policies.json',
                          'verify-archived-release.py', 'prepare-archive-evidence.py', 'prepare-release-evidence.py']:
                 self.assertEqual((ROOT / 'scripts' / name).read_bytes(), (sibling / 'scripts' / name).read_bytes(), repo + '/' + name)
+            for name in ['verify-homebrew-features.py', 'verify-homebrew-native.py']:
+                self.assertEqual((ROOT / 'scripts' / name).read_bytes(), (sibling / 'scripts' / name).read_bytes(), repo + '/' + name)
+        native = ROOT / 'internal/scripts/aggregate-formula-validation.py'
+        if native.exists():
+            self.assertEqual(native.read_bytes(), (ROOT / 'scripts/verify-homebrew-native.py').read_bytes())
 
 
 class ArchiveTests(unittest.TestCase):

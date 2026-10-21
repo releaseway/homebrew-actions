@@ -15,7 +15,7 @@ A = runpy.run_path(str(ROOT / 'verify-archived-release.py'))
 
 
 def current_policy(repository):
-    return 'release-v1'
+    return B['current_policy'](repository)
 
 
 def bind_inputs(bundle, repository, tag, candidate, run_ids, distribution_run, policy_id=None):
@@ -70,7 +70,7 @@ def prepare(repository, tag, candidate, run_ids, distribution_run, output):
         B['atomic_write'](output, raw)
         return {'state': 'prepared', 'release-url': ''}
     module = runpy.run_path(str(ROOT / 'verify-release-evidence.py'))
-    checker = B['checker_identity'](repository, os.environ.get('GITHUB_SHA', '').lower())
+    checker = B['checker_identity'](repository, os.environ.get('GITHUB_SHA', '').lower(), policy_id)
     _, bundle = B['collect'](module, repository, candidate, run_ids, distribution_run, tag, checker,
                             B['collection_identity'](repository), policy_id)
     B['atomic_write'](output, B['canonical'](bundle))

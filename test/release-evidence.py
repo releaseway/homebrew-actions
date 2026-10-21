@@ -18,11 +18,15 @@ class ReadinessTests(unittest.TestCase):
         self.repository = 'releaseway/npm-actions'
         self.fixture = 'releaseway/npm-actions-fixture'
         self.ci = dict(id=1, repository={'full_name': self.repository}, head_sha=SHA, path='.github/workflows/check.yml', status='completed', conclusion='success', event='push')
+        self.ci.update(run_attempt=1, workflow_id=90, created_at='2026-10-21T00:00:00Z',
+                       updated_at='2026-10-21T00:10:00Z', run_started_at='2026-10-21T00:00:01Z')
         self.runs = {}
         self.evidence = {}
         self.artifacts = {}
         for number, scenario, workflow, state, suffix in [(2, 'npm-stage', 'publish.yml', 'staged', 'fixture'), (3, 'npm-direct', 'direct.yml', 'published', 'native')]:
             self.runs[number] = dict(id=number, repository={'full_name': self.fixture}, head_sha=FIXTURE_SHA, path='.github/workflows/' + workflow, status='completed', conclusion='success', event='workflow_dispatch', run_attempt=2)
+            self.runs[number].update(workflow_id=90 + number, created_at='2026-10-21T00:00:00Z',
+                                     updated_at='2026-10-21T00:10:00Z', run_started_at='2026-10-21T00:00:01Z')
             self.evidence[number] = dict(schema=1, candidate_repository=self.repository, candidate_sha=SHA, fixture_repository=self.fixture, fixture_commit=FIXTURE_SHA,
                                          run_id=number, run_attempt=2, workflow=workflow, scenario=scenario, state=state, version='0.0.7-' + suffix + '.0', version_source='git-tag',
                                          integrity='sha512-' + base64.b64encode(b'x' * 64).decode(), installed_node_versions=['22', '24', '26'])
@@ -109,7 +113,9 @@ class ReadinessTests(unittest.TestCase):
             if repository == 'releaseway/actions':
                 with self.assertRaises(ValueError): MODULE['verify'](repository, SHA, [2])
             else:
-                self.assertEqual(MODULE['verify'](repository, SHA, [2])['candidate_repository'], repository)
+                with self.assertRaisesRegex(ValueError, 'one run per'):
+                    MODULE['verify'](repository, SHA, [2])
+                self.assertEqual(MODULE['verify'](repository, SHA, [2], policy_id='release-v1')['candidate_repository'], repository)
 
 
 

@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       acceptance-runs:
-        description: Successful exact-candidate fixture run IDs, comma-separated
+        description: Successful exact-candidate homebrew-public and revision/platform fixture run IDs, comma-separated
         required: true
         type: string
 

@@ -85,11 +85,15 @@ def verify_distribution(candidate, run_id):
     return {'run_id': run_id, 'run_attempt': run['run_attempt'], 'artifact_id': artifact['id']}
 
 
-def verify(repository, candidate, run_ids, distribution_run_id=None):
+def verify(repository, candidate, run_ids, distribution_run_id=None, policy_id=None):
     require(repository in POLICIES, 'unsupported release repository')
     require(re.fullmatch(r'[0-9a-fA-F]{40}', candidate), 'candidate must be a full 40-character SHA')
     candidate = candidate.lower()
     ci_workflow, fixture, scenarios = POLICIES[repository]
+    policy_id = policy_id or BUNDLE['current_policy'](repository)
+    require(repository in BUNDLE['policy_data'](policy_id)['repositories'], 'repository not allowed by policy')
+    if policy_id == 'homebrew-platforms-v2':
+        scenarios = dict(scenarios, **{'homebrew-revision-platforms': ('homebrew-features-acceptance.yml', 'verified')})
     # A newer failure or in-progress rerun must not be hidden by an older success.
     ci = require_ci(repository, candidate, ci_workflow)
     require(ci['event'] == 'push', 'CI evidence must be a repository push run')
@@ -110,11 +114,15 @@ def verify(repository, candidate, run_ids, distribution_run_id=None):
         require(scenario in scenarios and scenario not in seen, 'missing, unexpected or duplicate scenario')
         workflow, state = scenarios[scenario]
         successful_run(run, fixture, run['head_sha'].lower(), workflow)
-        require(evidence.get('schema') == 1, 'unsupported evidence schema')
+        schema = 2 if scenario == 'homebrew-revision-platforms' else 1
+        require(type(evidence.get('schema')) is int and evidence['schema'] == schema, 'unsupported evidence schema')
         require(evidence.get('candidate_repository') == repository and evidence.get('candidate_sha') == candidate, 'acceptance candidate mismatch')
         require(evidence.get('fixture_repository') == fixture and evidence.get('fixture_commit') == run['head_sha'], 'fixture commit mismatch')
         require(evidence.get('run_id') == run_id and evidence.get('run_attempt') == run['run_attempt'] and evidence.get('workflow') == workflow, 'acceptance attempt/workflow mismatch')
         require(evidence.get('state') == state, 'acceptance must verify fresh candidate execution')
+        if scenario == 'homebrew-revision-platforms':
+            feature = runpy.run_path(str(Path(__file__).with_name('verify-homebrew-features.py')))
+            feature['verify_features'](evidence, candidate, run, artifacts, api_bytes)
         if repository == 'releaseway/npm-actions':
             integrity = evidence.get('integrity', '')
             require(re.fullmatch(r'sha512-[A-Za-z0-9+/]{86}==', integrity) and len(base64.b64decode(integrity[7:], validate=True)) == 64, 'planned npm integrity missing')
@@ -149,13 +157,15 @@ if __name__ == '__main__':
     try:
         run_ids = [int(value.strip()) for value in args.acceptance_runs.split(',')]
         if args.bundle:
-            checker = BUNDLE['checker_identity'](args.repository, os.environ.get('GITHUB_SHA', '').lower())
+            policy_id = BUNDLE['current_policy'](args.repository)
+            checker = BUNDLE['checker_identity'](args.repository, os.environ.get('GITHUB_SHA', '').lower(), policy_id)
             result, bundle = BUNDLE['collect'](globals(), args.repository, args.candidate, run_ids, args.distribution_run,
-                                               args.release_tag, checker, BUNDLE['collection_identity'](args.repository))
+                                               args.release_tag, checker, BUNDLE['collection_identity'](args.repository), policy_id)
             BUNDLE['atomic_write'](args.bundle, BUNDLE['canonical'](bundle))
         else:
             require(args.release_tag is None, '--release-tag requires --bundle')
             result = verify(args.repository, args.candidate, run_ids, args.distribution_run)
         print(json.dumps(result, indent=2))
     except (ValueError, KeyError, TypeError, OSError, zipfile.BadZipFile, subprocess.TimeoutExpired) as error:
-        parser.exit(1, f'Release readiness failed: {error}\n')
+        parser.exit(2 if args.bundle and (isinstance(error, OSError) or 'unsupported' in str(error)) else 1,
+                    f'Release readiness failed: {error}\n')

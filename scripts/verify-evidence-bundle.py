@@ -28,7 +28,7 @@ def main():
         return 0
     except (KeyError, TypeError, ValueError, OSError, zipfile.BadZipFile) as error:
         print('Evidence verification failed: ' + str(error), file=__import__('sys').stderr)
-        return 2 if 'unsupported' in str(error) else 1
+        return 2 if isinstance(error, OSError) or 'unsupported' in str(error) else 1
 
 
 if __name__ == '__main__':
