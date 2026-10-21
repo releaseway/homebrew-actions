@@ -169,7 +169,9 @@ class BundleTests(unittest.TestCase):
                 continue
             for name in ['verify-release-evidence.py', 'verify-distribution-receipts.py', 'evidence-bundle.py',
                          'verify-evidence-bundle.py', 'release-evidence-policies.json', 'verify-release-set-receipts.py',
-                         'verify-archived-release.py', 'prepare-archive-evidence.py', 'prepare-release-evidence.py']:
+                         'verify-archived-release.py', 'prepare-archive-evidence.py', 'prepare-release-evidence.py',
+                         'release-inputs.py', 'release-reuse.py', 'ci-contract.py', 'ci-mode.py', 'ci-gate.py',
+                         'check-docs.py', 'verify-tag-ci.py', 'release-approval-revocations.json']:
                 self.assertEqual((ROOT / 'scripts' / name).read_bytes(), (sibling / 'scripts' / name).read_bytes(), repo + '/' + name)
             for name in ['verify-homebrew-features.py', 'verify-homebrew-native.py']:
                 self.assertEqual((ROOT / 'scripts' / name).read_bytes(), (sibling / 'scripts' / name).read_bytes(), repo + '/' + name)
