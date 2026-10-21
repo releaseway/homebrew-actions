@@ -1,9 +1,12 @@
 # Packaging revisions and supported platforms
 
-These features are implemented on the **unreleased candidate**. The published
-v0.4.3 SHA in the README does not include them. For candidate evaluation, replace
-`CANDIDATE_SHA` below with a reviewed full 40-character homebrew-actions commit.
-Reusable workflow references must be literal; expressions cannot select them.
+Use a homebrew-actions ref whose spec accepts `revision` and `platforms`, and whose
+workflows expose `spec-commit` and native validation outputs. This guide describes
+its checkout; verify support at your selected release tag or commit. Replace
+`<homebrew-actions-sha>` with that full 40-character SHA using
+[reference selection](https://github.com/releaseway/actions/blob/main/docs/action-references.md).
+When no published release supports the needed inputs, use a reviewed source commit
+for candidate evaluation. Reusable workflow refs must be literal.
 
 ## Validate source packages on the platforms you support
 
@@ -95,7 +98,7 @@ jobs:
     needs: packaging
     permissions:
       contents: read
-    uses: releaseway/homebrew-actions/.github/workflows/publish.yml@CANDIDATE_SHA
+    uses: releaseway/homebrew-actions/.github/workflows/publish.yml@<homebrew-actions-sha>
     with:
       tap-repository: owner/homebrew-tap
       commit: ${{ needs.packaging.outputs.source-commit }}
@@ -135,14 +138,12 @@ source/spec/Formula/run/attempt/invocation identities. Individual receipts and t
 aggregate are retained for 30 days. Repeated calls in one run receive distinct UUIDs.
 Publication stops if any required receipt is missing, duplicated or inconsistent.
 
-The automation's own future release gate uses `homebrew-platforms-v2`: existing
+The automation's own release gate uses `homebrew-platforms-v2`: existing
 public acceptance plus the new 21-case revision/platform campaign. Its durable
 approval also preserves the six original aggregate ZIPs. See the
 [fixture campaign](https://github.com/releaseway/release-fixture/tree/main/homebrew-features)
 and [archive verification guide](https://github.com/releaseway/actions/blob/main/docs/release-evidence.md).
 
-After a separately approved stable publication, select a Homebrew minor release
-for these additive inputs and synchronize all consumer full-SHA pins and version
-comments. This guide does not change the README's v0.4.3 examples to an unpublished
-version. Internal release-approval changes in actions/npm-actions can be released
-on their own schedules before updating their consumers.
+The automation release and each consumer's dependency update are separate
+operations. Candidate acceptance establishes the tested SHA's behavior; it does
+not establish that a published release contains those interfaces.

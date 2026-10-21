@@ -6,17 +6,21 @@ Generate, validate, and publish a Homebrew Formula from a product repository.
 destination tap. The product repository owns its build and GitHub Release. The tap
 repository owns published `Formula/*.rb` state.
 
-## Version
+<a id="version"></a>
 
-[v0.4.3](https://github.com/releaseway/homebrew-actions/releases/tag/v0.4.3) uses
-`8fe42d36a7f93a3c399461efbe571fc695d4cdc6`. Pin all reusable workflows to this
-full SHA.
+## Choose a release
 
-The main branch additionally implements **unreleased** packaging `revision`,
-separate source/spec commits, explicit supported platforms and native validation
-receipts. See [packaging and platform configuration](docs/packaging-platforms.md)
-before evaluating a candidate. The v0.4.3 examples below retain their published
-contract and do not include those new inputs.
+Select a release from [Releases](https://github.com/releaseway/homebrew-actions/releases)
+and pin all reusable workflows to its full commit SHA. Replace
+`<homebrew-actions-sha>` before saving the examples. See
+[reference selection](https://github.com/releaseway/actions/blob/main/docs/action-references.md)
+for the steps. Reusable workflow refs must be literal; expressions cannot select them.
+
+This README describes its checkout. Read the docs at the chosen tag or commit
+for a published release's contract. Packaging `revision`, separate source/spec
+commits, explicit platforms and native receipts require a ref implementing those
+interfaces; confirm support before following the
+[packaging and platform guide](docs/packaging-platforms.md).
 
 ## Quick start
 
@@ -28,6 +32,8 @@ Add `.github/homebrew/formula.yml` to the product repository:
 name: example
 desc: Example CLI
 license: MIT
+dependencies:
+  build: [go]
 
 install: |
   system "go", "build", *std_go_args(ldflags: "-s -w"), "./cmd/example"
@@ -45,7 +51,9 @@ Add a reusable-workflow job to the product's pull-request CI:
 ```yaml
 jobs:
   homebrew:
-    uses: releaseway/homebrew-actions/.github/workflows/check.yml@8fe42d36a7f93a3c399461efbe571fc695d4cdc6 # v0.4.3
+    permissions:
+      contents: read
+    uses: releaseway/homebrew-actions/.github/workflows/check.yml@<homebrew-actions-sha>
     with:
       tap-repository: owner/homebrew-tap
 ```
@@ -62,7 +70,9 @@ same immutable source commit:
 jobs:
   homebrew:
     needs: release
-    uses: releaseway/homebrew-actions/.github/workflows/publish.yml@8fe42d36a7f93a3c399461efbe571fc695d4cdc6 # v0.4.3
+    permissions:
+      contents: read
+    uses: releaseway/homebrew-actions/.github/workflows/publish.yml@<homebrew-actions-sha>
     with:
       tap-repository: owner/homebrew-tap
       commit: ${{ needs.release.outputs.commit }}
@@ -78,8 +88,8 @@ runners, and updates the tap only after validation succeeds. It returns:
 - `version`: normalized Formula version;
 - `state`: `published` when the tap changed, otherwise `unchanged`.
 
-Always pin cross-repository workflows to a full commit SHA. The adjacent `vX.Y.Z`
-comment is release metadata for review and dependency tooling.
+Keep the same full automation SHA in both workflows. `commit` and `version`
+identify the product release, independently of that automation ref.
 
 ## GitHub Release distributions
 
@@ -188,15 +198,15 @@ against it before Formula rendering.
 
 ### Version protection and rollback
 
-This section describes v0.4.3. The unreleased candidate additionally compares
-packaging revision; see [revision updates](docs/packaging-platforms.md#publish-a-packaging-fix-without-changing-upstream-source).
-
 Publishing an existing Formula blocks version downgrades by default. At equal
-scheme and version, metadata or install/test edits are allowed when the source
-commit is unchanged.
-Release ordering compares `(version_scheme, version)`, with the scheme taking
-precedence. The spec's optional `version_scheme` must be a non-negative integer;
-omitting it means `0`. To restart version numbering, add it to the product spec:
+scheme, version and packaging revision, metadata or install/test edits are allowed
+when the source commit is unchanged. Release ordering compares
+`(version_scheme, version, revision)`, with the scheme taking precedence and
+omitted revision meaning `0`. See
+[revision updates](docs/packaging-platforms.md#publish-a-packaging-fix-without-changing-upstream-source)
+for packaging-only upgrades. The spec's optional `version_scheme` must be a
+non-negative integer; omitting it means `0`. To restart version numbering, add
+it to the product spec:
 
 ```yaml
 version_scheme: 1
@@ -236,7 +246,7 @@ during rebase; rerun against the latest tap state.
 
 ### Validated Formula bytes
 
-Starting with v0.4.3, publishing freezes the generated Formula's SHA-256 before uploading it.
+Publishing freezes the generated Formula's SHA-256 before uploading it.
 Validation and publication consume that identity. Every rebase and push checks
 both the working file and the Formula blob in `HEAD` against those validated
 bytes. An automatically merged change to the same Formula can therefore stop
@@ -246,11 +256,7 @@ eligible for bounded rebase retries.
 If this check fails, rerun the complete publishing workflow against the current
 tap so the candidate is generated and validated again. A retry of only the push
 step cannot certify different bytes. `allow-downgrade` controls version ordering
-and never bypasses this byte check. The v0.4.3 pins above include this safeguard.
-
-The v0.4.3 spec does not accept Homebrew's `revision` field. A packaging-only
-revision at the same upstream version is not a supported update policy. Do not
-use `version_scheme` as a substitute: it changes the version numbering sequence.
+and never bypasses this byte check.
 
 ## Formula ownership
 
@@ -287,15 +293,13 @@ Direct pushes must be allowed by the destination branch policy.
 published immutable release, source commit, declared assets, and SHA-256 digests, then
 installs/tests the generated Formula on every required native runner before publishing.
 
-On v0.4.3, source release validation runs on macOS arm64 only.
-This is not evidence of Linux or Intel execution. For GitHub Release asset
-distributions, declaring an operating system requires both its arm64 and x86_64
-assets; those declared OS/architecture pairs each run native validation. A single
-architecture per OS and a configurable source-validation matrix are not supported
-by that published spec. These defaults remain when `platforms` is omitted on the
-unreleased candidate; an explicit declaration enables the new support model.
-See [platform configuration](docs/packaging-platforms.md). Spec audits alone do not
-prove native installation.
+Declare `platforms` to select the supported native targets. Source and prebuilt
+distributions validate every selected target; prebuilt asset keys must match that
+set. Without `platforms`, source release validation runs on macOS arm64 only and
+does not prove Linux or Intel execution. Prebuilt specs without `platforms` require
+both arm64 and x86_64 for each declared operating system and validate those pairs.
+See [platform configuration](docs/packaging-platforms.md) for single-architecture
+and asymmetric sets. Spec audits alone do not prove native installation.
 
 Linux x86_64 validation and spec audits use Ubuntu 24.04, matching the Linux arm64
 runner's Ubuntu release. Formula generation, tap publication and deletion also
@@ -311,37 +315,14 @@ internal renderer and scripts.
 
 ## Development
 
-Run deterministic regressions locally:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for local regressions, Homebrew loader
+coverage, implementation ownership and automation-release acceptance.
 
-```sh
-python3 test/formula-generator.py
-python3 test/workflow-contracts.py
-python3 test/publish-scripts.py
-python3 test/formula-validation.py
-python3 test/setup-deploy-key.py
-python3 test/tap-maintenance.py
-python3 test/release-evidence.py
-python3 test/evidence-bundle.py
-python3 test/homebrew-feature-evidence.py
-python3 test/platform-contracts.py
-python3 test/validation-evidence.py
-```
-
-CI runs the regression suite on Linux and macOS and lints the reusable workflows.
-
-The Formula action validates inputs in its shell entrypoint and loads
-`internal/formula/render.rb` from the pinned automation checkout. Renderer extraction
-preserves Formula bytes and workflow outputs.
-
-Repository releases require latest successful push CI at the tag's SHA and matching
-public Homebrew `acceptance-runs`. The unreleased release gate requires both the
-legacy public and revision/platform campaigns and preserves a durable approval
-asset. See [archive verification](https://github.com/releaseway/actions/blob/main/docs/release-evidence.md) and the
-[candidate guide](https://github.com/releaseway/release-fixture#candidate-release-readiness)
-for literal candidate pins, fixture taps, retention and retries.
+The [same-run release guide](https://github.com/releaseway/actions/blob/main/docs/app-free-release.md)
+connects version preparation, GitHub publication and this tap workflow. Homebrew
+uses the caller's tap-scoped deploy key or explicit token; no additional GitHub App
+is required.
 
 ## License
 
 MIT
-
-The [same-run release guide](https://github.com/releaseway/actions/blob/main/docs/app-free-release.md) connects version preparation, GitHub publication and this existing tap workflow. Homebrew continues to use the caller's tap-scoped deploy key or explicit token; no additional GitHub App is required.
