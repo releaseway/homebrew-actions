@@ -21,6 +21,10 @@ python3 test/release-set-evidence.py
 python3 test/homebrew-feature-evidence.py
 python3 test/platform-contracts.py
 python3 test/validation-evidence.py
+python3 test/release-inputs.py
+python3 test/release-reuse.py
+python3 test/ci-contract.py
+python3 test/release-preparation.py
 git diff --check
 ```
 
@@ -39,7 +43,7 @@ and public workflow outputs when changing their implementation.
 
 ## Approve an automation release
 
-Repository releases require the newest successful push CI at the tag's SHA and
+Full automation releases require the newest successful branch CI at the tag's SHA and
 matching public Homebrew `acceptance-runs`. Both the legacy public and
 revision/platform campaigns are required; the gate preserves a durable approval
 asset. See
@@ -47,3 +51,9 @@ asset. See
 and the [candidate guide](https://github.com/releaseway/release-fixture#candidate-release-readiness)
 for literal candidate pins, fixture taps, retention and retries. Local tests do not
 replace those public native acceptance runs.
+
+Documentation-only releases can reuse an authenticated full approval when all
+other Git inputs match. They still check current documentation, source identity
+and the new Release asset. Tags perform a lightweight branch-CI identity check.
+The archive guide explains the initial full approval, revocation and forced full
+checks. Source, Formula and native validation policies remain unchanged.

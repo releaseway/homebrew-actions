@@ -69,7 +69,8 @@ def collect(repository, candidate, mode=None):
     if mode is None:
         full_role = 'evidence' if repository == 'releaseway/homebrew-actions' else 'static'
         mode = 'full' if any(job['name'] == full_role and job['conclusion'] == 'success' for job in jobs) else 'docs'
-    evidence = dict(contract=CONTRACT, mode=mode, run=run, jobs=jobs)
+    evidence = dict(contract=CONTRACT, mode=mode, run=module['BUNDLE']['run_snapshot'](run),
+                    jobs=module['BUNDLE']['snapshot']({'jobs': jobs})['jobs'])
     verify(evidence, repository, candidate, mode)
     current = module['api_json'](f'repos/{repository}/actions/runs/{run["id"]}')
     latest = module['require_ci'](repository, candidate, WORKFLOWS[repository])

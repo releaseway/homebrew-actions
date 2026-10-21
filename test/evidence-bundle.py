@@ -311,12 +311,13 @@ class LifecycleTests(unittest.TestCase):
         with patch.object(self.module['runpy'], 'run_path', side_effect=load), patch.dict(os.environ, env):
             for observed in [None, dict(draft=True, assets=[])]:
                 self.archive['release'] = lambda *a, **k: observed
-                self.assertEqual(self.prepare()['state'], 'prepared')
+                self.assertEqual(self.module['_prepare_legacy']('releaseway/npm-actions', 'v1.2.3', SHA,
+                                 [2, 3], None, self.output)['state'], 'prepared')
                 self.assertEqual(B['parse_json'](self.output.read_bytes())['collection']['workflow']['status'], 'in_progress')
             B['atomic_write'](self.output, b'preserved')
             self.h.h.artifacts[2][0]['expired'] = True
             with self.assertRaisesRegex(ValueError, 'expired'):
-                self.prepare()
+                self.module['_prepare_legacy']('releaseway/npm-actions', 'v1.2.3', SHA, [2, 3], None, self.output)
             self.assertEqual(self.output.read_bytes(), b'preserved')
 
 

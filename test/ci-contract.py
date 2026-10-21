@@ -64,7 +64,7 @@ class CiTests(unittest.TestCase):
         fixture.setUp()
         self.addCleanup(fixture.doCleanups)
         ci = fixture.ci
-        module = dict(require_ci=lambda *a: ci['run'], pages=lambda *a: iter(ci['jobs']),
+        module = dict(BUNDLE=F['B'], require_ci=lambda *a: ci['run'], pages=lambda *a: iter(ci['jobs']),
                       api_json=lambda *a: dict(ci['run'], run_attempt=2))
         with patch('runpy.run_path', return_value=module), self.assertRaisesRegex(ValueError, 'changed'):
             C['collect'](fixture.repository, fixture.a, 'full')

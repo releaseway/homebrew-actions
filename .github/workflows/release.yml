@@ -9,8 +9,16 @@ on:
         type: string
       acceptance-runs:
         description: Successful exact-candidate homebrew-public and revision/platform fixture run IDs, comma-separated
-        required: true
+        required: false
         type: string
+      force-full:
+        description: Require fresh exact-candidate public acceptance.
+        type: boolean
+        default: false
+      baseline-tag:
+        description: Optional immutable stable full baseline; defaults to the latest release.
+        type: string
+        required: false
 
 permissions:
   contents: write
@@ -44,9 +52,13 @@ jobs:
           CANDIDATE: ${{ steps.release.outputs.target }}
           RELEASE_TAG: ${{ inputs.tag }}
           ACCEPTANCE_RUNS: ${{ inputs.acceptance-runs }}
+          FORCE_FULL: ${{ inputs.force-full }}
+          BASELINE_TAG: ${{ inputs.baseline-tag }}
         run: |
           set -euo pipefail
           extra=()
+          if [ "$FORCE_FULL" = true ]; then extra+=(--force-full); fi
+          if [ -n "$BASELINE_TAG" ]; then extra+=(--baseline-tag "$BASELINE_TAG"); fi
           python3 scripts/prepare-release-evidence.py \
             --repository "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" \
             --candidate "$CANDIDATE" --acceptance-runs "$ACCEPTANCE_RUNS" \
@@ -88,6 +100,10 @@ jobs:
           {
             echo "### homebrew-actions ${{ steps.release.outputs.tag }}"
             echo ""
+            echo "- verification: ${{ steps.evidence.outputs.verification }}"
+            echo "- original SHA: ${{ steps.evidence.outputs.original-sha }}"
+            echo "- original verification: ${{ steps.evidence.outputs.verified-at }}"
+            echo "- current CI: ${{ steps.evidence.outputs.ci-run }}"
             echo "- state: ${{ steps.publish.outputs.state || steps.evidence.outputs.state }}"
             echo "- release: ${{ steps.publish.outputs.release-url || steps.evidence.outputs.release-url }}"
           } >> "$GITHUB_STEP_SUMMARY"

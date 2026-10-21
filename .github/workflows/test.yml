@@ -45,6 +45,7 @@ jobs:
       - run: python3 test/release-inputs.py
       - run: python3 test/release-reuse.py
       - run: python3 test/ci-contract.py
+      - run: python3 test/release-preparation.py
       - run: python3 test/release-evidence.py
       - run: python3 test/evidence-bundle.py
       - run: python3 test/release-set-evidence.py

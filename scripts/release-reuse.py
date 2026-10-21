@@ -18,8 +18,8 @@ def policy():
     return dict(id=POLICY, data=data, sha256=B['sha256'](B['canonical'](data)))
 
 
-def checker(repository, commit):
-    value = B['checker_identity'](repository, commit, B['current_policy'](repository))
+def checker(repository, commit, scenario_policy=None):
+    value = B['checker_identity'](repository, commit, scenario_policy or B['current_policy'](repository))
     for name in ('release-reuse.py', 'release-inputs.py', 'ci-contract.py', 'prepare-release-evidence.py',
                  'verify-archived-release.py', 'ci-mode.py', 'ci-gate.py', 'check-docs.py', 'verify-tag-ci.py'):
         value['files'][name] = B['sha256']((ROOT / name).read_bytes())
@@ -32,6 +32,7 @@ def candidate_identity(repository, tag, candidate):
 
 def full(bundle, root, ci):
     identity = bundle['candidate']
+    B['require'](bundle['policy']['id'] == B['current_policy'](identity['repository']), 'fresh full scenario policy differs')
     B['verify_bundle'](bundle, identity['repository'], identity['tag'], identity['sha'])
     inputs = I['snapshot'](root, identity['sha'])
     result = dict(schema=2, verification='full', candidate=identity, policy=policy(),
@@ -60,7 +61,8 @@ def verify(bundle, repository, tag, candidate):
             and re.fullmatch('[0-9a-f]{40}', candidate or ''), 'candidate identity mismatch')
     require(bundle['policy'] == policy() and repository in policy()['data']['repositories'], 'reuse policy differs')
     recorded = bundle['checker']
-    expected_names = set(checker(repository, candidate)['files'])
+    scenario = bundle['full']['policy']['id'] if bundle['verification'] == 'full' else bundle['baseline']['approval']['full']['policy']['id']
+    expected_names = set(checker(repository, candidate, scenario)['files'])
     require(recorded['repository'] == repository and re.fullmatch('[0-9a-f]{40}', recorded['commit'])
             and set(recorded['files']) == expected_names
             and all(re.fullmatch('[0-9a-f]{64}', value) for value in recorded['files'].values()), 'checker identity differs')
@@ -68,7 +70,7 @@ def verify(bundle, repository, tag, candidate):
     if mode == 'full':
         original = bundle['full']
         require(original['schema'] == 1 and original['candidate'] == bundle['candidate'], 'full approval source differs')
-        require(original['policy']['id'] == B['current_policy'](repository), 'full scenario policy differs')
+        require(original['policy']['id'] != 'legacy-20261020', 'legacy backfill cannot establish a new-policy full anchor')
         require(original['checker']['commit'] == recorded['commit'], 'full checker commit differs')
         B['verify_bundle'](original, repository, tag, candidate)
         run = bundle['ci']['run']
@@ -108,7 +110,9 @@ def verify(bundle, repository, tag, candidate):
         I['verify'](bundle['proof'], source['sha'], candidate)
     else:
         raise ValueError('unsupported verification mode')
-    C['verify'](bundle['ci'], repository, candidate, 'docs' if mode == 'equivalent' else 'full')
+    coverage = bundle['ci']['mode'] if mode == 'equivalent' else 'full'
+    require(coverage in ('docs', 'full'), 'full or documentation CI required')
+    C['verify'](bundle['ci'], repository, candidate, coverage)
     return dict(state='consistency_verified', candidate_repository=repository, candidate_sha=candidate,
                 tag=tag, verification=mode)
 
@@ -143,6 +147,7 @@ def load_anchor(repository, tag=None, full_only=False):
         B['require'](direct['identity'] == pinned and direct['approval']['verification'] == 'full', 'original full anchor changed')
         return direct
     B['require'](bundle['verification'] == 'full', 'full baseline required')
+    B['require'](bundle['full']['policy']['id'] == B['current_policy'](repository), 'full scenario policy changed')
     B['require'](authenticated['release_id'] == observed['id'], 'baseline Release changed during authentication')
     identity = dict(repository=repository, tag=tag, sha=authenticated['candidate'],
                     release_id=observed['id'], asset_id=authenticated['asset_id'], sha256=authenticated['sha256'])
