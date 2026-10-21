@@ -4,6 +4,7 @@ require "json"
 require "open3"
 require "tempfile"
 require "yaml"
+require_relative "platforms"
 
 def fail_with(message)
   warn message
@@ -62,7 +63,7 @@ def safe_release_segment(value, path)
   value
 end
 
-def resolve_distribution(spec, repository, version, source_commit, validation_mode)
+def resolve_distribution(spec, repository, version, source_commit, validation_mode, platform_model)
   distribution = spec["distribution"]
   if distribution.nil?
     url = "https://github.com/#{repository}/archive/#{source_commit}.tar.gz"
@@ -95,23 +96,8 @@ def resolve_distribution(spec, repository, version, source_commit, validation_mo
     )
     assets = distribution["assets"]
     fail_with("distribution.assets must be a mapping") unless assets.is_a?(Hash)
-    platforms_by_system = {
-      "macos" => %w[macos-arm64 macos-x86_64],
-      "linux" => %w[linux-arm64 linux-x86_64],
-    }
-    platforms = platforms_by_system.values.flatten
-    unknown_platforms = assets.keys - platforms
-    fail_with("distribution.assets has unsupported platforms: #{unknown_platforms.join(", ")}") unless unknown_platforms.empty?
-    systems = platforms_by_system.filter_map do |system, system_platforms|
-      system if (system_platforms & assets.keys).any?
-    end
-    fail_with("distribution.assets must declare at least one supported operating system") if systems.empty?
-    systems.each do |system|
-      missing = platforms_by_system.fetch(system) - assets.keys
-      fail_with("distribution.assets is missing #{system} platforms: #{missing.join(", ")}") unless missing.empty?
-    end
-
-    selected_platforms = systems.flat_map { |system| platforms_by_system.fetch(system) }
+    systems = platform_model.fetch("systems")
+    selected_platforms = platform_model.fetch("targets")
     expanded_assets = selected_platforms.to_h do |platform|
       asset = safe_release_segment(
         expand_release_template(assets.fetch(platform), "distribution.assets.#{platform}", version),
@@ -175,8 +161,10 @@ def check_duplicate_spec_keys(document)
   root = document&.root
   return unless root.is_a?(Psych::Nodes::Mapping)
 
-  revision_fields = root.children.each_slice(2).count { |key, _| key.is_a?(Psych::Nodes::Scalar) && key.value == "revision" }
-  fail_with("duplicate revision field") if revision_fields > 1
+  %w[revision platforms].each do |name|
+    fields = root.children.each_slice(2).count { |key, _| key.is_a?(Psych::Nodes::Scalar) && key.value == name }
+    fail_with("duplicate #{name} field") if fields > 1
+  end
 
   fields = root.children.each_slice(2).select { |key, _| key.is_a?(Psych::Nodes::Scalar) && key.value == "command_aliases" }
   fail_with("duplicate command_aliases field") if fields.length > 1
@@ -430,7 +418,7 @@ def ensure_known_keys(spec)
   allowed = %w[
     name caveats conflicts_with dependencies deprecate disable desc homepage install keg_only
     license link_overwrite livecheck options post_install service test distribution
-    uses_from_macos version_scheme command_aliases revision
+    uses_from_macos version_scheme command_aliases revision platforms
   ]
   unknown = spec.keys - allowed
   fail_with("unsupported formula spec keys: #{unknown.join(", ")}") unless unknown.empty?
@@ -472,13 +460,20 @@ homepage = optional_string(spec, "homepage") || "https://github.com/#{ENV.fetch(
 license = spec.fetch("license") { fail_with("license is required") }
 install = normalize_bin_paths(required_string(spec, "install"))
 test = normalize_bin_paths(required_string(spec, "test"))
+begin
+  platform_model = FormulaPlatforms.normalize(spec)
+rescue ArgumentError => e
+  fail_with(e.message)
+end
 distribution = resolve_distribution(
   spec,
   ENV.fetch("REPOSITORY"),
   ENV.fetch("VERSION"),
   ENV.fetch("SOURCE_COMMIT"),
   ENV.fetch("VALIDATION_MODE"),
+  platform_model,
 )
+platform_model["sources"] = distribution.fetch("sources")
 dependencies = dependency_lines(spec["dependencies"])
 options = option_lines(spec["options"])
 conflicts_with = conflicts_with_lines(spec["conflicts_with"])
@@ -506,45 +501,61 @@ if distribution["type"] == "source"
   content << "  sha256 #{source.fetch("sha256").dump}\n"
 else
   sources = distribution.fetch("sources")
+  if platform_model.fetch("mode") == "explicit"
+    fallback = sources.fetch(platform_model.fetch("targets").first)
+    content << "  url #{fallback.fetch("url").dump}\n"
+    content << "  sha256 #{fallback.fetch("sha256").dump}\n"
+  end
 end
 content << "  license #{render_license(license)}\n"
 content << "  revision #{revision}\n" if revision.positive?
 content << "  version_scheme #{version_scheme}\n" if version_scheme.positive?
 content << "\n"
 
+platform_content = +""
 if distribution["type"] == "github-release"
-  {
-    "macos" => ["macos-arm64", "macos-x86_64"],
-    "linux" => ["linux-arm64", "linux-x86_64"],
-  }.each do |os, (arm_platform, intel_platform)|
-    next unless distribution.fetch("systems").include?(os)
+  %w[macos linux].each do |os|
+    next unless platform_model.fetch("systems").include?(os)
 
-    arm = sources.fetch(arm_platform)
-    intel = sources.fetch(intel_platform)
-    content << "  on_#{os} do\n"
-    content << "    on_arm do\n"
-    content << "      url #{arm.fetch("url").dump}\n"
-    content << "      sha256 #{arm.fetch("sha256").dump}\n"
-    content << "    end\n"
-    content << "    on_intel do\n"
-    content << "      url #{intel.fetch("url").dump}\n"
-    content << "      sha256 #{intel.fetch("sha256").dump}\n"
-    content << "    end\n"
-    content << "  end\n\n"
+    platform_content << "  on_#{os} do\n"
+    { "arm" => "#{os}-arm64", "intel" => "#{os}-x86_64" }.each do |arch, platform|
+      source = sources[platform]
+      next unless source
+      platform_content << "    on_#{arch} do\n"
+      platform_content << "      url #{source.fetch("url").dump}\n"
+      platform_content << "      sha256 #{source.fetch("sha256").dump}\n"
+      platform_content << "    end\n"
+    end
+    arch = FormulaPlatforms.arch_requirement(platform_model, os)
+    platform_content << "    depends_on arch: :#{arch}\n" if arch
+    platform_content << "  end\n\n"
   end
   expected_version = ENV.fetch("VERSION").dump
-  content << "  version #{expected_version} if version.to_s != #{expected_version}\n\n"
+  platform_content << "  version #{expected_version} if version.to_s != #{expected_version}\n\n"
+elsif platform_model.fetch("mode") == "explicit"
+  %w[macos linux].each do |os|
+    arch = FormulaPlatforms.arch_requirement(platform_model, os)
+    next unless arch
+    platform_content << "  on_#{os} do\n"
+    platform_content << "    depends_on arch: :#{arch}\n"
+    platform_content << "  end\n\n"
+  end
 end
+content << platform_content if platform_model.fetch("mode") == "legacy"
 
 class_stanzas = []
-if distribution["type"] == "github-release" && distribution.fetch("systems").length == 1
-  class_stanzas << "  depends_on :#{distribution.fetch("systems").first}"
+if distribution["type"] == "github-release" && platform_model.fetch("mode") == "legacy" && platform_model.fetch("systems").length == 1
+  class_stanzas << "  depends_on :#{platform_model.fetch("systems").first}"
 end
 class_stanzas << keg_only_line(spec["keg_only"])
 class_stanzas.concat(options)
 class_stanzas.concat(lifecycle)
 class_stanzas.concat(dependencies)
+if platform_model.fetch("mode") == "explicit" && platform_model.fetch("systems").length == 1
+  class_stanzas << "  depends_on :#{platform_model.fetch("systems").first}"
+end
 class_stanzas.concat(uses_from_macos)
+class_stanzas << platform_content.rstrip if platform_model.fetch("mode") == "explicit" && !platform_content.empty?
 class_stanzas.concat(conflicts_with)
 class_stanzas.concat(link_overwrite)
 class_stanzas.compact!
@@ -600,19 +611,8 @@ File.write(formula_path, content)
 source = distribution.fetch("sources")["source"]
 runner_matrix = if ENV.fetch("VALIDATION_MODE") == "spec"
   [{ "platform" => "spec", "runner" => "ubuntu-24.04" }]
-elsif distribution["type"] == "source"
-  [{ "platform" => "macos-arm64", "runner" => "macos-latest" }]
 else
-  runners = {
-    "macos-arm64" => "macos-latest",
-    "macos-x86_64" => "macos-15-intel",
-    "linux-arm64" => "ubuntu-24.04-arm",
-    "linux-x86_64" => "ubuntu-24.04",
-  }
-  distribution.fetch("systems").flat_map do |system|
-    platforms = system == "macos" ? %w[macos-arm64 macos-x86_64] : %w[linux-arm64 linux-x86_64]
-    platforms.map { |platform| { "platform" => platform, "runner" => runners.fetch(platform) } }
-  end
+  platform_model.fetch("runner-matrix")
 end
 File.open(ENV.fetch("GITHUB_OUTPUT"), "a") do |output|
   output.puts "formula=#{formula}"
@@ -629,5 +629,6 @@ File.open(ENV.fetch("GITHUB_OUTPUT"), "a") do |output|
   output.puts "release-tag=#{distribution.fetch("tag", "")}"
   output.puts "validation-mode=#{ENV.fetch("VALIDATION_MODE")}"
   output.puts "runner-matrix=#{JSON.generate(runner_matrix)}"
+  output.puts "platform-model=#{JSON.generate(platform_model)}"
 end
 puts "updated Formula/#{formula}.rb for #{ENV.fetch("REPOSITORY")}@#{ENV.fetch("SOURCE_COMMIT")}"

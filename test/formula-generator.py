@@ -156,7 +156,7 @@ esac
             capture_output=True,
             check=False,
         )
-        if baseline_generator and not env.get("SPEC_COMMIT") and not any(line.startswith(("command_aliases:", "revision:")) for line in distribution):
+        if baseline_generator and not env.get("SPEC_COMMIT") and not any(line.startswith(("command_aliases:", "revision:", "platforms:")) for line in distribution):
             current_formula = (tap / "Formula/example.rb").read_bytes() if result.returncode == 0 else None
             baseline_output = workspace / "baseline-output"
             baseline_output.write_text("")
@@ -164,8 +164,9 @@ esac
             assert baseline.returncode == result.returncode, (baseline.stderr, result.stderr)
             if result.returncode == 0:
                 assert current_formula == (tap / "Formula/example.rb").read_bytes()
-                legacy_output = "\n".join(line for line in output.read_text().splitlines() if not line.startswith(("spec-", "revision="))) + "\n"
-                assert legacy_output.encode() == baseline_output.read_bytes()
+                legacy_output = "\n".join(line for line in output.read_text().splitlines() if not line.startswith(("spec-", "revision=", "platform-model="))) + "\n"
+                baseline_legacy_output = "\n".join(line for line in baseline_output.read_text().splitlines() if not line.startswith(("spec-", "revision=", "platform-model="))) + "\n"
+                assert legacy_output == baseline_legacy_output
         if expected_error:
             assert result.returncode != 0, "invalid release distribution should fail"
             assert expected_error in result.stderr, result.stderr

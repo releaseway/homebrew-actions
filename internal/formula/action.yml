@@ -33,6 +33,9 @@ inputs:
     default: "release"
 
 outputs:
+  platform-model:
+    description: Normalized platform declaration, sources and required native targets.
+    value: ${{ steps.update.outputs.platform-model }}
   revision:
     description: Formula packaging revision, default zero.
     value: ${{ steps.update.outputs.revision }}
