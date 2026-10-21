@@ -85,7 +85,7 @@ def approval_result(bundle, state, url=''):
     ci_id = bundle['result']['ci_run_id'] if bundle['schema'] == 1 else bundle['ci']['run']['id']
     return dict(state=state, **{'release-url': url, 'verification': mode,
                 'original-sha': original['candidate']['sha'],
-                'verified-at': original['collection']['collected_at'], 'ci-run': ci_id})
+                'verified-at': original['collection']['collected_at'], 'ci-run': str(ci_id)})
 
 
 def bind_v2(bundle, repository, tag, candidate, run_ids, distribution_run, baseline_tag=None):

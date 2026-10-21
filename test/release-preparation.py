@@ -43,6 +43,9 @@ class PreparationTests(unittest.TestCase):
         first = self.prepare()
         self.assertEqual(first['verification'], 'equivalent')
         self.assertEqual(first['original-sha'], self.h.a)
+        # GitHub step outputs are strings, including provider numeric run IDs.
+        self.assertTrue(all(isinstance(value, str) for value in first.values()))
+        self.assertEqual(first['ci-run'], str(self.h.docs_ci['run']['id']))
         raw = self.output.read_bytes()
         self.archive['release'] = lambda *a, **k: dict(draft=True, assets=[dict(name='releaseway-evidence.json')])
         self.archive['download_bundle'] = lambda *a, **k: raw
@@ -64,6 +67,7 @@ class PreparationTests(unittest.TestCase):
         self.module['prepare'].__globals__['_prepare_legacy'] = collect
         result = self.module['prepare'](self.h.repository, 'v1.2.3', self.h.a, [2, 3], None, self.output)
         self.assertEqual(result['verification'], 'full')
+        self.assertTrue(all(isinstance(value, str) for value in result.values()))
         self.assertEqual(F['B']['parse_json'](self.output.read_bytes())['schema'], 2)
         # A substituted wrong identity is rejected before it replaces an existing output.
         self.archive['tag_commit'] = lambda *a: self.h.b
