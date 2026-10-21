@@ -48,7 +48,7 @@ def parse_json(raw):
 def reject_bool_ids(value):
     if isinstance(value, dict):
         for key, item in value.items():
-            if key in ('id', 'run_id', 'run_attempt', 'artifact_id') or key.endswith('_id'):
+            if key in ('id', 'run_id', 'run_attempt', 'artifact_id') or key.endswith('_id') or key.endswith('Id'):
                 require(not isinstance(item, bool), 'boolean ID is invalid')
             reject_bool_ids(item)
     elif isinstance(value, list):
@@ -233,11 +233,13 @@ def verify_bundle(bundle, repository, tag, candidate, module=None):
     require(set(checker['files']) == set(checker_identity(repository, candidate)['files']), 'checker file inventory mismatch')
     require(all(re.fullmatch(r'[0-9a-f]{64}', value) for value in checker['files'].values()), 'invalid checker digest')
     collection = bundle['collection']
+    require(len(canonical(responses)) + len(canonical(collection)) <= MAX_SNAPSHOTS, 'API snapshots exceed limit')
     require(collection['mode'] in ('pre-publication', 'backfill') and collection['collected_at'], 'invalid collection mode/time')
     require(collection['workflow']['repository'] == repository and type(collection['workflow']['run_id']) is int
             and collection['workflow']['run_id'] > 0 and type(collection['workflow']['run_attempt']) is int
             and collection['workflow']['run_attempt'] > 0, 'invalid collection workflow identity')
     require(re.fullmatch(r'[0-9a-f]{40}', collection['workflow']['head_sha']), 'invalid collection commit')
+    require(collection['workflow']['head_sha'] == checker['commit'], 'collector workflow/checker commit mismatch')
     if policy['id'] == 'legacy-20261020':
         expected = expected_policy['releases'][repository]
         require(collection['mode'] == 'backfill' and tag == expected['tag'] and candidate == expected['candidate'],

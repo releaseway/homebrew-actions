@@ -37,7 +37,23 @@ jobs:
           mode: resolve
           tag: ${{ inputs.tag }}
 
+      - name: Prepare durable release approval
+        id: evidence
+        env:
+          GH_TOKEN: ${{ secrets.RELEASEWAY_EVIDENCE_TOKEN || github.token }}
+          CANDIDATE: ${{ steps.release.outputs.target }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          ACCEPTANCE_RUNS: ${{ inputs.acceptance-runs }}
+        run: |
+          set -euo pipefail
+          extra=()
+          python3 scripts/prepare-release-evidence.py \
+            --repository "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" \
+            --candidate "$CANDIDATE" --acceptance-runs "$ACCEPTANCE_RUNS" \
+            "${extra[@]}"
+
       - name: Verify required release files
+        if: steps.evidence.outputs.state == 'prepared'
         env:
           TARGET: ${{ steps.release.outputs.commit }}
         run: |
@@ -49,18 +65,8 @@ jobs:
             git cat-file -e "$TARGET:$path"
           done
 
-      - name: Verify exact-candidate CI and acceptance evidence
-        env:
-          GH_TOKEN: ${{ secrets.RELEASEWAY_EVIDENCE_TOKEN || github.token }}
-          CANDIDATE: ${{ steps.release.outputs.target }}
-          ACCEPTANCE_RUNS: ${{ inputs.acceptance-runs }}
-        run: |
-          python3 scripts/verify-release-evidence.py \
-            --repository "$GITHUB_REPOSITORY" \
-            --candidate "$CANDIDATE" \
-            --acceptance-runs "$ACCEPTANCE_RUNS"
-
       - name: Publish immutable automation release
+        if: steps.evidence.outputs.state == 'prepared'
         id: publish
         uses: releaseway/actions@2abdf26c6f01c1e49da4ba5d85253847fe721fd9 # v0.6.3
         with:
@@ -68,12 +74,20 @@ jobs:
           commit: ${{ steps.release.outputs.target }}
           title: ${{ steps.release.outputs.tag }}
           latest: "true"
+          assets: releaseway-evidence.json
+
+      - name: Authenticate published approval asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          CANDIDATE: ${{ steps.release.outputs.target }}
+        run: python3 scripts/verify-archived-release.py --repository "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG" --candidate "$CANDIDATE"
 
       - name: Summary
         run: |
           {
             echo "### homebrew-actions ${{ steps.release.outputs.tag }}"
             echo ""
-            echo "- state: ${{ steps.publish.outputs.state }}"
-            echo "- release: ${{ steps.publish.outputs.release-url }}"
+            echo "- state: ${{ steps.publish.outputs.state || steps.evidence.outputs.state }}"
+            echo "- release: ${{ steps.publish.outputs.release-url || steps.evidence.outputs.release-url }}"
           } >> "$GITHUB_STEP_SUMMARY"

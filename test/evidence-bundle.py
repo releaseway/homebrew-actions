@@ -146,7 +146,8 @@ class BundleTests(unittest.TestCase):
             if not (sibling / '.git').exists():
                 continue
             for name in ['verify-release-evidence.py', 'verify-distribution-receipts.py', 'evidence-bundle.py',
-                         'verify-evidence-bundle.py', 'release-evidence-policies.json']:
+                         'verify-evidence-bundle.py', 'release-evidence-policies.json',
+                         'verify-archived-release.py', 'prepare-archive-evidence.py', 'prepare-release-evidence.py']:
                 self.assertEqual((ROOT / 'scripts' / name).read_bytes(), (sibling / 'scripts' / name).read_bytes(), repo + '/' + name)
 
 
@@ -190,6 +191,106 @@ class ArchiveTests(unittest.TestCase):
                      'assets: releaseway-evidence.json', 'notes: file', 'verify-archived-release.py']:
             self.assertIn(text, workflow)
         self.assertNotIn('pull_request', workflow)
+
+
+class LifecycleTests(unittest.TestCase):
+    def setUp(self):
+        self.h = BundleTests()
+        self.h.setUp()
+        self.bundle = self.h.collect()
+        self.h.module['api_json'] = self.h.get
+        self.raw = B['canonical'](self.bundle)
+        self.module = runpy.run_path(str(ROOT / 'scripts/prepare-release-evidence.py'))
+        self.archive = self.module['A']
+        self.archive['tag_commit'] = lambda *args: SHA
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.output = Path(self.directory.name) / 'releaseway-evidence.json'
+        B['atomic_write'](self.output, b'preserved')
+
+    def prepare(self, ids=None):
+        return self.module['prepare']('releaseway/npm-actions', 'v1.2.3', SHA,
+                                      [2, 3] if ids is None else ids, None, self.output)
+
+    def test_published_archive_reconciles_without_actions_api(self):
+        self.archive['release'] = lambda *a, **k: dict(draft=False)
+        def authenticate(repo, tag, candidate, output):
+            B['atomic_write'](output, self.raw)
+            return {'release_url': 'https://example.test/release'}
+        self.archive['authenticate'] = authenticate
+        result = self.prepare()
+        self.assertEqual(result['state'], 'existing')
+        self.assertEqual(self.output.read_bytes(), self.raw)
+
+    def test_published_missing_or_changed_approval_preserves_existing_file(self):
+        self.archive['release'] = lambda *a, **k: dict(draft=False)
+        def authenticate(repo, tag, candidate, output):
+            B['atomic_write'](output, self.raw)
+            return {'release_url': 'https://example.test/release'}
+        self.archive['authenticate'] = authenticate
+        with self.assertRaisesRegex(ValueError, 'archive_conflict'):
+            self.prepare(ids=[4, 5])
+        self.assertEqual(self.output.read_bytes(), b'preserved')
+        def missing(*args):
+            raise ValueError('archive asset missing')
+        self.archive['authenticate'] = missing
+        with self.assertRaisesRegex(ValueError, 'missing'):
+            self.prepare()
+        self.assertEqual(self.output.read_bytes(), b'preserved')
+
+    def test_draft_reuses_first_approval_bytes_across_collection_clocks(self):
+        self.archive['release'] = lambda *a, **k: dict(draft=True, assets=[dict(name='releaseway-evidence.json')])
+        self.archive['download_bundle'] = lambda *a, **k: self.raw
+        # The live run metadata is still checked, but no ZIPs are downloaded again.
+        module = self.h.module
+        original_run_path = self.module['runpy'].run_path
+        def load(path):
+            if str(path).endswith('/verify-release-evidence.py'):
+                return module
+            return original_run_path(path)
+        from unittest.mock import patch
+        with patch.object(self.module['runpy'], 'run_path', side_effect=load):
+            self.assertEqual(self.prepare()['state'], 'prepared')
+            self.assertEqual(self.prepare()['state'], 'prepared')
+        self.assertEqual(self.output.read_bytes(), self.raw)
+
+    def test_changed_draft_attempt_blocks_publication(self):
+        self.archive['release'] = lambda *a, **k: dict(draft=True, assets=[dict(name='releaseway-evidence.json')])
+        self.archive['download_bundle'] = lambda *a, **k: self.raw
+        self.h.h.runs[2]['run_attempt'] += 1
+        original_run_path = self.module['runpy'].run_path
+        def load(path):
+            return self.h.module if str(path).endswith('/verify-release-evidence.py') else original_run_path(path)
+        from unittest.mock import patch
+        with patch.object(self.module['runpy'], 'run_path', side_effect=load):
+            with self.assertRaisesRegex(ValueError, 'archive_conflict'):
+                self.prepare()
+        self.assertEqual(self.output.read_bytes(), b'preserved')
+
+    def test_official_workflow_gates_publish_and_authenticates_after(self):
+        workflow = (ROOT / '.github/workflows/release.yml').read_text()
+        self.assertLess(workflow.index('prepare-release-evidence.py'), workflow.index('name: Publish immutable'))
+        self.assertLess(workflow.index('name: Publish immutable'), workflow.index('verify-archived-release.py'))
+        self.assertIn('assets: releaseway-evidence.json', workflow)
+        self.assertIn("if: steps.evidence.outputs.state == 'prepared'", workflow)
+
+    def test_fresh_and_partial_empty_draft_collect_and_block_on_failure(self):
+        from unittest.mock import patch
+        import os
+        original_run_path = self.module['runpy'].run_path
+        def load(path):
+            return self.h.module if str(path).endswith('/verify-release-evidence.py') else original_run_path(path)
+        env = dict(GITHUB_SHA=SHA, GITHUB_RUN_ID='10', GITHUB_RUN_ATTEMPT='1')
+        with patch.object(self.module['runpy'], 'run_path', side_effect=load), patch.dict(os.environ, env):
+            for observed in [None, dict(draft=True, assets=[])]:
+                self.archive['release'] = lambda *a, **k: observed
+                self.assertEqual(self.prepare()['state'], 'prepared')
+                self.assertEqual(B['parse_json'](self.output.read_bytes())['collection']['workflow']['status'], 'in_progress')
+            B['atomic_write'](self.output, b'preserved')
+            self.h.h.artifacts[2][0]['expired'] = True
+            with self.assertRaisesRegex(ValueError, 'expired'):
+                self.prepare()
+            self.assertEqual(self.output.read_bytes(), b'preserved')
 
 
 if __name__ == '__main__':

@@ -35,6 +35,22 @@ def tag_commit(repository, tag):
     raise ValueError('tag nesting exceeds limit')
 
 
+def download_bundle(repository, tag, observed, authenticated=True):
+    assets = [asset for asset in observed['assets'] if asset['name'] == 'releaseway-evidence.json']
+    B['require'](len(assets) == 1, 'archive asset missing or ambiguous')
+    asset = assets[0]
+    B['require'](type(asset['id']) is int and 0 < asset['size'] <= B['MAX_BUNDLE'], 'invalid archive asset size/identity')
+    with tempfile.TemporaryDirectory(prefix='releaseway-archive-') as directory:
+        gh(['release', 'download', tag, '--repo', repository, '--pattern', 'releaseway-evidence.json', '--dir', directory])
+        path = Path(directory) / 'releaseway-evidence.json'
+        B['require'](path.stat().st_size <= B['MAX_BUNDLE'], 'downloaded archive exceeds limit')
+        raw = path.read_bytes()
+        B['require'](asset['digest'] == 'sha256:' + B['sha256'](raw), 'release asset digest mismatch')
+        if authenticated:
+            gh(['release', 'verify-asset', tag, str(path), '--repo', repository])
+        return raw
+
+
 def authenticate(repository, tag, candidate=None, output=None):
     B['require'](repository in B['policy_data']('release-v1')['repositories'], 'unsupported repository')
     B['require'](re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', tag or ''), 'invalid tag')
@@ -51,22 +67,16 @@ def authenticate(repository, tag, candidate=None, output=None):
     B['require'](type(asset['id']) is int and 0 < asset['size'] <= B['MAX_BUNDLE'], 'invalid archive asset size/identity')
     expected_candidate = legacy['candidate'] if sidecar else tag_commit(repository, tag)
     B['require'](candidate is None or candidate == expected_candidate, 'candidate tag mismatch')
-    with tempfile.TemporaryDirectory(prefix='releaseway-archive-') as directory:
-        gh(['release', 'download', archive_tag, '--repo', repository, '--pattern', 'releaseway-evidence.json', '--dir', directory])
-        path = Path(directory) / 'releaseway-evidence.json'
-        B['require'](path.stat().st_size <= B['MAX_BUNDLE'], 'downloaded archive exceeds limit')
-        raw = path.read_bytes()
-        B['require'](asset['digest'] == 'sha256:' + B['sha256'](raw), 'release asset digest mismatch')
-        gh(['release', 'verify-asset', archive_tag, str(path), '--repo', repository])
-        bundle = B['parse_json'](raw)
-        B['verify_bundle'](bundle, repository, tag, expected_candidate)
-        if sidecar:
-            B['require'](bundle['policy']['id'] == 'legacy-20261020', 'sidecar policy mismatch')
-            B['require'](bundle['checker']['commit'] == tag_commit(repository, archive_tag), 'collector tag mismatch')
-        else:
-            B['require'](bundle['policy']['id'] != 'legacy-20261020', 'legacy policy cannot approve a fresh release')
-        if output is not None:
-            B['atomic_write'](output, raw)
+    raw = download_bundle(repository, archive_tag, observed)
+    bundle = B['parse_json'](raw)
+    B['verify_bundle'](bundle, repository, tag, expected_candidate)
+    if sidecar:
+        B['require'](bundle['policy']['id'] == 'legacy-20261020', 'sidecar policy mismatch')
+        B['require'](bundle['checker']['commit'] == tag_commit(repository, archive_tag), 'collector tag mismatch')
+    else:
+        B['require'](bundle['policy']['id'] != 'legacy-20261020', 'legacy policy cannot approve a fresh release')
+    if output is not None:
+        B['atomic_write'](output, raw)
     return {'state': 'archive_authenticated', 'repository': repository, 'tag': tag,
             'archive_tag': archive_tag, 'candidate': expected_candidate, 'sha256': B['sha256'](raw),
             'asset_id': asset['id'], 'release_url': observed['html_url']}
