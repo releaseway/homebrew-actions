@@ -37,6 +37,8 @@ jobs:
         run: python3 test/publish-scripts.py
       - name: Formula validation isolation
         run: python3 test/formula-validation.py
+      - name: Native validation evidence
+        run: python3 test/validation-evidence.py
       - name: Deploy-key arguments
         run: python3 test/setup-deploy-key.py
       - name: Tap maintenance
@@ -48,7 +50,7 @@ jobs:
             internal/scripts/*.sh \
             scripts/setup-deploy-key.sh
       - name: Ruby syntax
-        run: ruby -c internal/formula/render.rb && ruby -c internal/formula/platforms.rb && ruby -c internal/scripts/validate-formula-update.rb
+        run: ruby -c internal/formula/render.rb && ruby -c internal/formula/platforms.rb && ruby -c internal/scripts/validate-formula-update.rb && ruby -c internal/scripts/record-formula-validation.rb
       - name: Whitespace
         run: git diff --check
 

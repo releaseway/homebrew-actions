@@ -164,8 +164,8 @@ esac
             assert baseline.returncode == result.returncode, (baseline.stderr, result.stderr)
             if result.returncode == 0:
                 assert current_formula == (tap / "Formula/example.rb").read_bytes()
-                legacy_output = "\n".join(line for line in output.read_text().splitlines() if not line.startswith(("spec-", "revision=", "platform-model="))) + "\n"
-                baseline_legacy_output = "\n".join(line for line in baseline_output.read_text().splitlines() if not line.startswith(("spec-", "revision=", "platform-model="))) + "\n"
+                legacy_output = "\n".join(line for line in output.read_text().splitlines() if not line.startswith(("spec-", "revision=", "platform-model=", "formula-context="))) + "\n"
+                baseline_legacy_output = "\n".join(line for line in baseline_output.read_text().splitlines() if not line.startswith(("spec-", "revision=", "platform-model=", "formula-context="))) + "\n"
                 assert legacy_output == baseline_legacy_output
         if expected_error:
             assert result.returncode != 0, "invalid release distribution should fail"
@@ -201,7 +201,7 @@ esac
     original_formula = (tap / "Formula/example.rb").read_bytes()
     original_output = output
     empty_alias_output = generate(["command_aliases: {}"])
-    assert [line for line in empty_alias_output.splitlines() if not line.startswith("spec-sha256=")] == [line for line in original_output.splitlines() if not line.startswith("spec-sha256=")]
+    assert [line for line in empty_alias_output.splitlines() if not line.startswith(("spec-sha256=", "formula-context="))] == [line for line in original_output.splitlines() if not line.startswith(("spec-sha256=", "formula-context="))]
     assert (tap / "Formula/example.rb").read_bytes() == original_formula
 
     # A separate maintenance branch may supply packaging B while upstream remains A.

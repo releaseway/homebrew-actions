@@ -615,6 +615,16 @@ else
   platform_model.fetch("runner-matrix")
 end
 File.open(ENV.fetch("GITHUB_OUTPUT"), "a") do |output|
+  context = {
+    "formula" => formula, "formula_sha256" => Digest::SHA256.hexdigest(content),
+    "source_commit" => ENV.fetch("SOURCE_COMMIT"), "spec_commit" => ENV.fetch("SPEC_COMMIT"),
+    "spec_path" => ENV.fetch("SPEC_PATH"), "spec_sha256" => Digest::SHA256.hexdigest(spec_text),
+    "version" => ENV.fetch("VERSION"), "version_scheme" => version_scheme, "revision" => revision,
+    "declaration_mode" => platform_model.fetch("mode"), "declared_platforms" => platform_model.fetch("declared"),
+    "required_platforms" => platform_model.fetch("targets"),
+    "runners" => platform_model.fetch("runner-matrix").to_h { |entry| [entry.fetch("platform"), entry.fetch("runner")] },
+  }
+  output.puts "formula-context=#{JSON.generate(context)}"
   output.puts "formula=#{formula}"
   output.puts "formula-path=Formula/#{formula}.rb"
   output.puts "archive-url=#{source&.fetch("url", "") || ""}"

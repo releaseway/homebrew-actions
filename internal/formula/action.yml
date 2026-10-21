@@ -33,6 +33,9 @@ inputs:
     default: "release"
 
 outputs:
+  formula-context:
+    description: Immutable Formula, spec, package and native validation identities.
+    value: ${{ steps.update.outputs.formula-context }}
   platform-model:
     description: Normalized platform declaration, sources and required native targets.
     value: ${{ steps.update.outputs.platform-model }}

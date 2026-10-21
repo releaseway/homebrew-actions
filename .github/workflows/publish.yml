@@ -43,6 +43,21 @@ on:
         description: SSH deploy key with write access to the destination tap.
         required: false
     outputs:
+      spec-commit:
+        description: Immutable caller commit containing the Formula spec.
+        value: ${{ jobs.generate.outputs.spec-commit }}
+      revision:
+        description: Formula packaging revision.
+        value: ${{ jobs.generate.outputs.revision }}
+      formula-sha256:
+        description: SHA-256 of the natively validated Formula bytes.
+        value: ${{ jobs.generate.outputs.formula-sha256 }}
+      validated-platforms:
+        description: JSON array of successfully validated native platforms.
+        value: ${{ jobs.homebrew-check.outputs.validated-platforms }}
+      validation-artifact-id:
+        description: Aggregate artifact containing the original native receipts.
+        value: ${{ jobs.homebrew-check.outputs.validation-artifact-id }}
       formula:
         description: Formula name declared by the spec.
         value: ${{ jobs.generate.outputs.formula }}
@@ -102,6 +117,12 @@ jobs:
       formula-sha256: ${{ steps.digest.outputs.sha256 }}
       runner-matrix: ${{ steps.formula.outputs.runner-matrix }}
       version: ${{ steps.formula.outputs.version }}
+      spec-commit: ${{ steps.formula.outputs.spec-commit }}
+      revision: ${{ steps.formula.outputs.revision }}
+      formula-context: ${{ steps.formula.outputs.formula-context }}
+      invocation-id: ${{ steps.invocation.outputs.id }}
+      formula-artifact-name: ${{ steps.invocation.outputs.formula-artifact-name }}
+      formula-artifact-id: ${{ steps.formula-upload.outputs.artifact-id }}
     steps:
       - name: Checkout pinned Homebrew automation
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -141,6 +162,17 @@ jobs:
           spec-path: ${{ inputs.spec-path }}
           validation-mode: release
 
+      - name: Identify this reusable workflow invocation
+        id: invocation
+        env:
+          FORMULA: ${{ steps.formula.outputs.formula }}
+        run: |
+          ruby -rsecurerandom -e '
+            id = SecureRandom.uuid
+            puts "id=#{id}"
+            puts "formula-artifact-name=homebrew-publish-formula-#{ENV.fetch("FORMULA")}-#{id}"
+          ' >> "$GITHUB_OUTPUT"
+
       - name: Freeze generated Formula bytes
         id: digest
         env:
@@ -148,9 +180,10 @@ jobs:
         run: ruby -rdigest -e 'puts "sha256=#{Digest::SHA256.file(ENV.fetch("FORMULA_PATH")).hexdigest}"' >> "$GITHUB_OUTPUT"
 
       - name: Upload generated Formula
+        id: formula-upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: homebrew-publish-formula-${{ steps.formula.outputs.formula }}
+          name: ${{ steps.invocation.outputs.formula-artifact-name }}
           path: tap/${{ steps.formula.outputs.formula-path }}
           if-no-files-found: error
           retention-days: 1
@@ -189,8 +222,21 @@ jobs:
       - name: Download generated Formula
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: homebrew-publish-formula-${{ needs.generate.outputs.formula }}
+          artifact-ids: ${{ needs.generate.outputs.formula-artifact-id }}
           path: tap/Formula
+
+      - name: Verify requested native runtime
+        env:
+          FORMULA_CONTEXT: ${{ needs.generate.outputs.formula-context }}
+          INVOCATION_ID: ${{ needs.generate.outputs.invocation-id }}
+          AUTOMATION_REPOSITORY: ${{ job.workflow_repository }}
+          AUTOMATION_SHA: ${{ job.workflow_sha }}
+          PLATFORM: ${{ matrix.target.platform }}
+          REQUESTED_RUNNER: ${{ matrix.target.runner }}
+          FORMULA_PATH: tap/${{ needs.generate.outputs.formula-path }}
+          NATIVE_RUNTIME: ${{ runner.temp }}/homebrew-native-runtime.json
+          NATIVE_RECEIPT: ${{ runner.temp }}/receipt.json
+        run: ruby automation/internal/scripts/record-formula-validation.rb --preflight
 
       - name: Validate Formula
         env:
@@ -203,8 +249,33 @@ jobs:
           ruby automation/internal/scripts/verify-formula-bytes.rb
           bash automation/internal/scripts/validate-formula.sh
 
+      - name: Record successful native validation
+        env:
+          FORMULA_CONTEXT: ${{ needs.generate.outputs.formula-context }}
+          INVOCATION_ID: ${{ needs.generate.outputs.invocation-id }}
+          AUTOMATION_REPOSITORY: ${{ job.workflow_repository }}
+          AUTOMATION_SHA: ${{ job.workflow_sha }}
+          PLATFORM: ${{ matrix.target.platform }}
+          REQUESTED_RUNNER: ${{ matrix.target.runner }}
+          FORMULA_PATH: tap/${{ needs.generate.outputs.formula-path }}
+          NATIVE_RUNTIME: ${{ runner.temp }}/homebrew-native-runtime.json
+          NATIVE_RECEIPT: ${{ runner.temp }}/receipt.json
+          VALIDATION_SUCCEEDED: "true"
+        run: ruby automation/internal/scripts/record-formula-validation.rb --record
+
+      - name: Upload native receipt
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: homebrew-native-${{ needs.generate.outputs.invocation-id }}-${{ matrix.target.platform }}
+          path: ${{ runner.temp }}/receipt.json
+          if-no-files-found: error
+          retention-days: 30
+
   homebrew-check:
     if: always()
+    outputs:
+      validated-platforms: ${{ steps.aggregate.outputs.validated-platforms }}
+      validation-artifact-id: ${{ steps.validation-upload.outputs.artifact-id }}
     needs:
       - generate
       - validate
@@ -224,6 +295,32 @@ jobs:
           GENERATE_RESULT: ${{ needs.generate.result }}
           VALIDATE_RESULT: ${{ needs.validate.result }}
         run: bash automation/internal/scripts/require-formula-validation.sh
+
+      - name: Download this invocation's native receipts
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: homebrew-native-${{ needs.generate.outputs.invocation-id }}-*
+          path: native-receipts
+
+      - name: Require complete current native receipt set
+        id: aggregate
+        env:
+          FORMULA_CONTEXT: ${{ needs.generate.outputs.formula-context }}
+          INVOCATION_ID: ${{ needs.generate.outputs.invocation-id }}
+          AUTOMATION_REPOSITORY: ${{ job.workflow_repository }}
+          AUTOMATION_SHA: ${{ job.workflow_sha }}
+        run: |
+          python3 automation/internal/scripts/aggregate-formula-validation.py \
+            --receipts native-receipts --output homebrew-validation.json
+
+      - name: Upload aggregate with original native receipts
+        id: validation-upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: homebrew-validation-${{ needs.generate.outputs.invocation-id }}
+          path: homebrew-validation.json
+          if-no-files-found: error
+          retention-days: 30
 
   publish:
     needs:
@@ -266,7 +363,7 @@ jobs:
       - name: Download generated Formula
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          name: homebrew-publish-formula-${{ needs.generate.outputs.formula }}
+          artifact-ids: ${{ needs.generate.outputs.formula-artifact-id }}
           path: tap/Formula
 
       - name: Commit Formula
