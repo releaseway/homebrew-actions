@@ -225,6 +225,9 @@ def collect(module, repository, candidate, run_ids, distribution_run, tag, check
 
 
 def verify_bundle(bundle, repository, tag, candidate, module=None):
+    if type(bundle.get('schema')) is int and bundle['schema'] == 2:
+        reuse = runpy.run_path(str(ROOT / 'release-reuse.py'))
+        return reuse['verify'](bundle, repository, tag, candidate)
     require(type(bundle.get('schema')) is int and bundle['schema'] == 1, 'unsupported bundle schema')
     reject_bool_ids(bundle)
     require(re.fullmatch(r'[0-9a-f]{40}', candidate or ''), 'invalid candidate SHA')

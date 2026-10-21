@@ -79,7 +79,7 @@ def authenticate(repository, tag, candidate=None, output=None):
         B['atomic_write'](output, raw)
     return {'state': 'archive_authenticated', 'repository': repository, 'tag': tag,
             'archive_tag': archive_tag, 'candidate': expected_candidate, 'sha256': B['sha256'](raw),
-            'asset_id': asset['id'], 'release_url': observed['html_url']}
+            'asset_id': asset['id'], 'release_id': observed['id'], 'release_url': observed['html_url']}
 
 
 if __name__ == '__main__':

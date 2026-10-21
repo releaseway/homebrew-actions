@@ -1,4 +1,10 @@
 {
+  "release-reuse-v1": {
+    "repositories": ["releaseway/actions", "releaseway/npm-actions", "releaseway/homebrew-actions"],
+    "description": "Versioned full or documentation-equivalent approval with original receipts, Git object proof and role-bound current CI; no time-based expiry.",
+    "input_policy": "releaseway-inputs-v1",
+    "ci_contract": "release-ci-v1"
+  },
   "release-v1": {
     "repositories": [
       "releaseway/actions",
