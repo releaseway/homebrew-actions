@@ -53,9 +53,12 @@ require_valid(Digest::SHA256.hexdigest(formula_bytes) == context.fetch("formula_
 os = command("uname", "-s")
 uname_arch = architecture(command("uname", "-m"))
 physical_arch = if os == "Darwin"
-  value = command("sysctl", "-n", "hw.optional.arm64")
-  require_valid(%w[0 1].include?(value), "Unknown macOS hardware architecture")
-  value == "1" ? "arm64" : "x86_64"
+  # Apple defines an absent translation selector as native (Intel Macs).
+  # -i ignores that missing selector; other sysctl errors still fail closed.
+  translated = command("sysctl", "-in", "sysctl.proc_translated")
+  require_valid(["", "0", "1"].include?(translated), "Unknown macOS translation state")
+  require_valid(translated != "1", "Translated macOS validation is not native")
+  uname_arch
 else
   uname_arch
 end

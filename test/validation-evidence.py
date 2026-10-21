@@ -152,7 +152,7 @@ class RecorderTests(unittest.TestCase):
         self.bin.mkdir()
         for name, code in {
             "uname": "print(os.environ['FAKE_OS'] if sys.argv[1]=='-s' else os.environ['FAKE_ARCH'])",
-            "sysctl": "print(os.environ['FAKE_HW_ARM'])",
+            "sysctl": "assert sys.argv[1:]==['-in','sysctl.proc_translated']; print(os.environ['FAKE_TRANSLATED']); sys.exit(int(os.environ.get('FAKE_SYSCTL_EXIT','0')))",
             "brew": "print('Homebrew 7.0' if sys.argv[1]=='--version' else json.dumps(dict(host_cpu=os.environ['FAKE_BREW_ARCH'],ruby_platform='test-ruby-platform')))",
         }.items():
             path = self.bin / name
@@ -172,7 +172,7 @@ class RecorderTests(unittest.TestCase):
                    NATIVE_RECEIPT=str(self.root / "receipt.json"), VALIDATION_SUCCEEDED="true",
                    RUNNER_OS="macOS" if os_name == "macos" else "Linux", RUNNER_ARCH=arch,
                    FAKE_OS="Darwin" if os_name == "macos" else "Linux", FAKE_ARCH=arch,
-                   FAKE_HW_ARM="1" if arch == "arm64" else "0", FAKE_BREW_ARCH=arch, GH_TOKEN="never-record-this")
+                   FAKE_TRANSLATED="" if target == "macos-x86_64" else "0", FAKE_BREW_ARCH=arch, GH_TOKEN="never-record-this")
         env.update(overrides or {})
         return subprocess.run(["ruby", str(ROOT / "internal/scripts/record-formula-validation.rb"), phase],
                               env=env, capture_output=True, text=True)
@@ -193,7 +193,7 @@ class RecorderTests(unittest.TestCase):
             self.assertTrue(json.loads((self.root / "runtime.json").read_text())["runtime"]["brew_version"].startswith("Homebrew "))
 
     def test_wrong_os_arch_rosetta_brew_process_and_failed_checks_block(self):
-        for overrides in [dict(FAKE_OS="Linux"), dict(FAKE_ARCH="x86_64"), dict(FAKE_HW_ARM="0"),
+        for overrides in [dict(FAKE_OS="Linux"), dict(FAKE_ARCH="x86_64"), dict(FAKE_TRANSLATED="1"), dict(FAKE_TRANSLATED="unexpected"), dict(FAKE_SYSCTL_EXIT="2"),
                           dict(FAKE_BREW_ARCH="x86_64"), dict(RUNNER_ARCH="X64")]:
             result = self.run_recorder("macos-arm64", "--preflight", overrides)
             self.assertNotEqual(result.returncode, 0, overrides)
