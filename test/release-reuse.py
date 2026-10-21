@@ -128,6 +128,13 @@ class ReuseTests(unittest.TestCase):
         finally:
             R['equivalent'].__globals__['revoked'] = original
 
+    def test_full_ci_is_also_sufficient_for_an_equivalent_candidate(self):
+        ci = copy.deepcopy(self.ci)
+        ci['run']['id'] = 31
+        ci['run']['head_sha'] = self.b
+        value = R['equivalent'](self.repository, 'v1.2.4', self.b, self.root, self.anchor, ci)
+        self.assertEqual(self.verify(value)['verification'], 'equivalent')
+
 
 if __name__ == '__main__':
     unittest.main()

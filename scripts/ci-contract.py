@@ -2,6 +2,7 @@
 import re
 
 CONTRACT = 'release-ci-v1'
+# Preserve this role set for archived v1 approvals when adding a new contract.
 WORKFLOWS = {'releaseway/actions': 'test.yml', 'releaseway/npm-actions': 'check.yml',
              'releaseway/homebrew-actions': 'test.yml'}
 RUNNERS = ['ubuntu-24.04', 'ubuntu-24.04-arm', 'macos-15', 'macos-15-intel', 'windows-2025', 'windows-11-arm']

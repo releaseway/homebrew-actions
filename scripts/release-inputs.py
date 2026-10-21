@@ -66,15 +66,20 @@ def snapshot(root, sha):
     commit = read_object(root, 'commit', sha)
     tree = commit_tree(base64.b64decode(commit))
     trees = {}
+    budget = len(commit)
 
-    def visit(tree_id):
+    def visit(tree_id, depth=0):
+        nonlocal budget
+        require(depth <= 128, 'Git tree nesting exceeds proof budget')
         if tree_id in trees:
             return
         encoded = read_object(root, 'tree', tree_id)
+        budget += len(encoded)
+        require(budget <= MAX_PROOF, 'Git tree proof exceeds budget')
         trees[tree_id] = encoded
         for mode, name, child in tree_entries(base64.b64decode(encoded)):
             if mode == '40000':
-                visit(child)
+                visit(child, depth + 1)
     visit(tree)
     return dict(commit=sha, object=commit, trees=trees)
 
@@ -106,6 +111,7 @@ def inventory(proof):
     entries = []
 
     def walk(tree_id, prefix, ancestors):
+        require(len(ancestors) <= 128, 'Git tree nesting exceeds proof budget')
         require(tree_id not in ancestors, 'recursive Git tree')
         require(tree_id in proof['trees'], 'missing Git tree object')
         raw_tree = decode_object('tree', tree_id, proof['trees'][tree_id])

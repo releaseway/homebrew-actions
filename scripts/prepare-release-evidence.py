@@ -162,6 +162,8 @@ def prepare(repository, tag, candidate, run_ids, distribution_run, output, force
         current = reuse['C']['collect'](repository, candidate, bundle['ci']['mode'])
         B['require'](current == bundle['ci'], 'archive_conflict: current CI changed')
         if bundle['verification'] == 'full':
+            B['require'](bundle['checker']['files'] == reuse['checker'](repository, candidate)['files'],
+                         'archive_conflict: pending full verifier changed')
             check_pending_full(bundle['full'])
         else:
             anchor = reuse['load_anchor'](repository, bundle['baseline']['identity']['tag'])
