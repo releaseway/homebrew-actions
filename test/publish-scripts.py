@@ -10,9 +10,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "internal" / "scripts"
 
 
-def formula(version: str, commit: str = "a" * 40, description: str = "example", scheme: int | None = None) -> str:
+def formula(version: str, commit: str = "a" * 40, description: str = "example", scheme: int | None = None, revision: int | None = None) -> str:
     scheme_line = f"  version_scheme {scheme}\n" if scheme is not None else ""
-    return f'# releaseway-version: {version}\n# releaseway-source-commit: {commit}\nclass Example < Formula\n  desc "{description}"\n{scheme_line}end\n'
+    revision_line = f"  revision {revision}\n" if revision is not None else ""
+    return f'# releaseway-version: {version}\n# releaseway-source-commit: {commit}\nclass Example < Formula\n  desc "{description}"\n{scheme_line}{revision_line}end\n'
 
 
 def run(script: str, *, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -138,7 +139,7 @@ def assert_credentials() -> None:
         assert "Provide tap_token or tap_deploy_key" in result.stdout
 
 
-def assert_commit_and_retry(*, scheme: int | None = None, newer_scheme: int | None = None, newer_version: str = "2.0.0") -> None:
+def assert_commit_and_retry(*, scheme: int | None = None, newer_scheme: int | None = None, newer_version: str = "2.0.0", newer_revision: int | None = None) -> None:
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         remote = root / "tap.git"
@@ -241,7 +242,7 @@ def assert_commit_and_retry(*, scheme: int | None = None, newer_scheme: int | No
 
         # A newer publication on the same Formula must be checked before rebase/push.
         git(competitor, "pull", "--ff-only")
-        (competitor / "Formula/example.rb").write_text(formula(newer_version, "b" * 40, scheme=newer_scheme))
+        (competitor / "Formula/example.rb").write_text(formula(newer_version, ("a" if newer_revision else "b") * 40, scheme=newer_scheme, revision=newer_revision))
         git(competitor, "add", ".")
         git(competitor, "commit", "-m", "publish newer formula")
         remote_head = git(competitor, "rev-parse", "HEAD")
@@ -391,13 +392,84 @@ def assert_scheme_policy() -> None:
             assert "version_scheme must be a non-negative integer literal" in result.stderr
 
 
+def assert_revision_policy() -> None:
+    # version, revision, source, scheme, override, allowed are domain expectations.
+    cases = [
+        ("1.2.3", None, "1.2.3", 1, "a", None, None, False, True),
+        ("1.2.3", 2, "1.2.3", 1, "a", None, None, False, False),
+        ("1.2.3", 1, "1.2.3", 1, "a", None, None, False, True),
+        ("1.2.3", 4, "1.2.4", None, "b", None, None, False, True),
+        ("1.2.3", 4, "1.2.4", 2, "b", None, None, False, True),
+        ("1.2.3", 0, "1.2.3", 1, "b", None, None, False, False),
+        ("1.2.3", 0, "1.2.3", 1, "b", None, None, True, True),
+        ("11.0.0", 4, "1.2.3", 0, "b", None, 1, False, True),
+        ("1.2.3", 0, "11.0.0", 9, "a", 1, 0, False, False),
+        ("1.2.3", 2, "1.2.3", 1, "a", None, None, True, True),
+    ]
+    for old_version, old_revision, new_version, new_revision, source, old_scheme, new_scheme, override, allowed in cases:
+        with tempfile.TemporaryDirectory() as directory:
+            repo = Path(directory)
+            git(repo, "init", "--initial-branch=main")
+            configure(repo)
+            target = repo / "example.rb"
+            target.write_text(formula(old_version, revision=old_revision, scheme=old_scheme))
+            git(repo, "add", ".")
+            git(repo, "commit", "-m", "baseline")
+            baseline = git(repo, "rev-parse", "HEAD")
+            target.write_text(formula(new_version, source * 40, "packaging change", new_scheme, new_revision))
+            output = repo / "output"
+            env = dict(FORMULA_PATH="example.rb", FORMULA="example", VERSION=new_version, COMMIT=source * 40,
+                       GITHUB_OUTPUT=str(output), ALLOW_DOWNGRADE=str(override).lower())
+            result = run("commit-formula.sh", cwd=repo, env=env)
+            assert (result.returncode == 0) == allowed, (cases, result.stderr)
+            if allowed:
+                package_version = new_version + (f"_{new_revision}" if new_revision else "")
+                assert git(repo, "log", "-1", "--format=%s") == f"chore: update example to {package_version}"
+                output.write_text("")
+                rerun = run("commit-formula.sh", cwd=repo, env=env)
+                assert rerun.returncode == 0 and output.read_text() == "changed=false\n"
+            else:
+                assert git(repo, "rev-parse", "HEAD") == baseline and not git(repo, "diff", "--cached")
+
+    with tempfile.TemporaryDirectory() as directory:
+        repo = Path(directory)
+        git(repo, "init", "--initial-branch=main")
+        configure(repo)
+        target = repo / "example.rb"
+        target.write_text("placeholder")
+        git(repo, "add", ".")
+        git(repo, "commit", "-m", "seed")
+        output = repo / "output"
+        env = dict(FORMULA_PATH="example.rb", FORMULA="example", VERSION="1.2.3", COMMIT="a" * 40, GITHUB_OUTPUT=str(output))
+        # Initial publication may explicitly choose a nonzero revision.
+        target.unlink()
+        git(repo, "add", ".")
+        git(repo, "commit", "-m", "no formula")
+        target.write_text(formula("1.2.3", revision=3))
+        assert run("commit-formula.sh", cwd=repo, env=env).returncode == 0
+        for malformed in ['-1', '1.5', '"1"', 'nil', '01', '1 + 1', '1\n  revision 2']:
+            target.write_text(formula("1.2.3", revision=1).replace("revision 1", "revision " + malformed))
+            invalid = run("commit-formula.sh", cwd=repo, env={**env, "ALLOW_DOWNGRADE": "true"})
+            assert invalid.returncode != 0 and "revision must be a non-negative integer literal" in invalid.stderr
+        # Malformed old handwritten revisions require an explicit override.
+        target.write_text(formula("1.2.3", revision=1).replace("revision 1", "revision calculate_revision"))
+        git(repo, "add", ".")
+        git(repo, "commit", "-m", "legacy invalid revision")
+        target.write_text(formula("1.2.4", revision=0))
+        env["VERSION"] = "1.2.4"
+        assert run("commit-formula.sh", cwd=repo, env=env).returncode != 0
+        assert run("commit-formula.sh", cwd=repo, env={**env, "ALLOW_DOWNGRADE": "true"}).returncode == 0
+
+
 def main() -> None:
+    assert_revision_policy()
     assert_validated_bytes()
     assert_preflight()
     assert_credentials()
     assert_commit_and_retry()
     assert_commit_and_retry(scheme=1, newer_scheme=2, newer_version="0.5.0")
     assert_commit_and_retry(scheme=1, newer_scheme=1, newer_version="1.0.1")
+    assert_commit_and_retry(newer_version="1.0.0", newer_revision=2)
     assert_update_policy()
     assert_scheme_policy()
     print("Homebrew publish scripts passed")

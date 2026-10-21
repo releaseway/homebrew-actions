@@ -33,6 +33,9 @@ inputs:
     default: "release"
 
 outputs:
+  revision:
+    description: Formula packaging revision, default zero.
+    value: ${{ steps.update.outputs.revision }}
   spec-commit:
     description: Immutable caller commit containing the spec.
     value: ${{ steps.update.outputs.spec-commit }}

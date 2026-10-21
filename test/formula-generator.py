@@ -156,7 +156,7 @@ esac
             capture_output=True,
             check=False,
         )
-        if baseline_generator and not any(line.startswith("command_aliases:") for line in distribution):
+        if baseline_generator and not env.get("SPEC_COMMIT") and not any(line.startswith(("command_aliases:", "revision:")) for line in distribution):
             current_formula = (tap / "Formula/example.rb").read_bytes() if result.returncode == 0 else None
             baseline_output = workspace / "baseline-output"
             baseline_output.write_text("")
@@ -164,7 +164,7 @@ esac
             assert baseline.returncode == result.returncode, (baseline.stderr, result.stderr)
             if result.returncode == 0:
                 assert current_formula == (tap / "Formula/example.rb").read_bytes()
-                legacy_output = "\n".join(line for line in output.read_text().splitlines() if not line.startswith("spec-")) + "\n"
+                legacy_output = "\n".join(line for line in output.read_text().splitlines() if not line.startswith(("spec-", "revision="))) + "\n"
                 assert legacy_output.encode() == baseline_output.read_bytes()
         if expected_error:
             assert result.returncode != 0, "invalid release distribution should fail"
@@ -180,6 +180,21 @@ esac
     assert "  depends_on :macos\n" not in formula
     assert "  depends_on :linux\n" not in formula
     assert "version_scheme" not in formula
+    assert "revision" not in formula
+    assert "revision=0\n" in output
+    legacy_bytes = (tap / "Formula/example.rb").read_bytes()
+    generate(["revision: 0"])
+    assert (tap / "Formula/example.rb").read_bytes() == legacy_bytes
+    for revision in [1, 4]:
+        output = generate([f"revision: {revision}"])
+        assert f"  revision {revision}\n" in (tap / "Formula/example.rb").read_text()
+        assert f"revision={revision}\n" in output
+    for invalid in ["-1", "true", "false", '"1"', "1.5", "null", "[]", "{}"]:
+        generate([f"revision: {invalid}"], "revision must be a non-negative integer")
+    generate(["revision: 1", "revision: 2"], "duplicate revision field")
+    generate(["revision: 2", "version_scheme: 1"])
+    assert '  revision 2\n  version_scheme 1\n' in (tap / "Formula/example.rb").read_text()
+    output = generate([])
 
     # Omission and an empty declaration preserve the existing artifact/output bytes.
     original_formula = (tap / "Formula/example.rb").read_bytes()

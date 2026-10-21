@@ -19,5 +19,6 @@ ruby "$script_dir/validate-formula-update.rb" HEAD
 git config user.name "github-actions[bot]"
 git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 git add "$FORMULA_PATH"
-git commit -m "chore: update ${FORMULA} to ${VERSION}"
+package_version="$(ruby "$script_dir/validate-formula-update.rb" --package-version)"
+git commit -m "chore: update ${FORMULA} to ${package_version}"
 echo "changed=true" >> "$GITHUB_OUTPUT"

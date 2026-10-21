@@ -171,9 +171,12 @@ def normalize_bin_paths(value)
   value.gsub(/"#\{bin\}\/([^"\s]+)"/, 'bin/"\\1"')
 end
 
-def check_command_alias_keys(document)
+def check_duplicate_spec_keys(document)
   root = document&.root
   return unless root.is_a?(Psych::Nodes::Mapping)
+
+  revision_fields = root.children.each_slice(2).count { |key, _| key.is_a?(Psych::Nodes::Scalar) && key.value == "revision" }
+  fail_with("duplicate revision field") if revision_fields > 1
 
   fields = root.children.each_slice(2).select { |key, _| key.is_a?(Psych::Nodes::Scalar) && key.value == "command_aliases" }
   fail_with("duplicate command_aliases field") if fields.length > 1
@@ -427,7 +430,7 @@ def ensure_known_keys(spec)
   allowed = %w[
     name caveats conflicts_with dependencies deprecate disable desc homepage install keg_only
     license link_overwrite livecheck options post_install service test distribution
-    uses_from_macos version_scheme command_aliases
+    uses_from_macos version_scheme command_aliases revision
   ]
   unknown = spec.keys - allowed
   fail_with("unsupported formula spec keys: #{unknown.join(", ")}") unless unknown.empty?
@@ -442,7 +445,7 @@ end
 
 begin
   spec_text = File.read(spec_path)
-  check_command_alias_keys(YAML.parse(spec_text))
+  check_duplicate_spec_keys(YAML.parse(spec_text))
   spec = YAML.safe_load(spec_text, permitted_classes: [], aliases: false)
 rescue Psych::Exception => e
   fail_with("formula spec YAML is invalid: #{e.message}")
@@ -451,6 +454,8 @@ end
 fail_with("formula spec must be a mapping") unless spec.is_a?(Hash)
 ensure_known_keys(spec)
 aliases = command_aliases(spec)
+revision = spec.fetch("revision", 0)
+fail_with("revision must be a non-negative integer") unless revision.is_a?(Integer) && revision >= 0
 version_scheme = spec.fetch("version_scheme", 0)
 unless version_scheme.is_a?(Integer) && version_scheme >= 0
   fail_with("version_scheme must be a non-negative integer")
@@ -503,6 +508,7 @@ else
   sources = distribution.fetch("sources")
 end
 content << "  license #{render_license(license)}\n"
+content << "  revision #{revision}\n" if revision.positive?
 content << "  version_scheme #{version_scheme}\n" if version_scheme.positive?
 content << "\n"
 
@@ -618,6 +624,7 @@ File.open(ENV.fetch("GITHUB_OUTPUT"), "a") do |output|
   output.puts "spec-path=#{ENV.fetch("SPEC_PATH")}"
   output.puts "spec-sha256=#{Digest::SHA256.hexdigest(spec_text)}"
   output.puts "version=#{ENV.fetch("VERSION")}"
+  output.puts "revision=#{revision}"
   output.puts "distribution=#{distribution.fetch("type")}"
   output.puts "release-tag=#{distribution.fetch("tag", "")}"
   output.puts "validation-mode=#{ENV.fetch("VALIDATION_MODE")}"
