@@ -164,7 +164,8 @@ esac
             assert baseline.returncode == result.returncode, (baseline.stderr, result.stderr)
             if result.returncode == 0:
                 assert current_formula == (tap / "Formula/example.rb").read_bytes()
-                assert output.read_bytes() == baseline_output.read_bytes()
+                legacy_output = "\n".join(line for line in output.read_text().splitlines() if not line.startswith("spec-")) + "\n"
+                assert legacy_output.encode() == baseline_output.read_bytes()
         if expected_error:
             assert result.returncode != 0, "invalid release distribution should fail"
             assert expected_error in result.stderr, result.stderr
@@ -183,7 +184,32 @@ esac
     # Omission and an empty declaration preserve the existing artifact/output bytes.
     original_formula = (tap / "Formula/example.rb").read_bytes()
     original_output = output
-    assert generate(["command_aliases: {}"]) == original_output
+    empty_alias_output = generate(["command_aliases: {}"])
+    assert [line for line in empty_alias_output.splitlines() if not line.startswith("spec-sha256=")] == [line for line in original_output.splitlines() if not line.startswith("spec-sha256=")]
+    assert (tap / "Formula/example.rb").read_bytes() == original_formula
+
+    # A separate maintenance branch may supply packaging B while upstream remains A.
+    git(source, "checkout", "-b", "packaging-fixture")
+    git(source, "add", ".")
+    git(source, "commit", "-m", "packaging spec")
+    packaging = subprocess.check_output(["git", "-C", str(source), "rev-parse", "HEAD"], text=True).strip()
+    output = generate([], env_overrides={"SPEC_COMMIT": packaging.upper(), "COMMIT": resolved_ref.upper()})
+    packaged_formula = (tap / "Formula/example.rb").read_text()
+    assert f"/archive/{resolved_ref}.tar.gz" in packaged_formula
+    assert f"# releaseway-source-commit: {resolved_ref}\n" in packaged_formula
+    assert f"# releaseway-spec-commit: {packaging}\n" in packaged_formula
+    assert f"# releaseway-spec-sha256: {sha256(spec_path.read_bytes()).hexdigest()}\n" in packaged_formula
+    assert f"spec-commit={packaging}\n" in output
+    for bad in ["main", "a" * 39, "a" * 41, " a" * 20]:
+        generate([], "spec-commit must be a full 40-character SHA", {"SPEC_COMMIT": bad})
+    generate([], "source checkout does not match spec-commit", {"SPEC_COMMIT": resolved_ref})
+    release_spec = ["distribution:", "  type: github-release", f"  tag: {release_tag}", "  assets:",
+                    *[f"    {platform}: {asset}" for platform, asset in platform_assets.items()]]
+    generate(release_spec, env_overrides={"SPEC_COMMIT": packaging})
+    generate(release_spec, "does not resolve to source commit", {"SPEC_COMMIT": packaging, "FAKE_TAG_COMMIT": packaging})
+    git(source, "restore", ".github/homebrew/formula.yml")
+    git(source, "checkout", "--detach", resolved_ref)
+    generate([])
     assert (tap / "Formula/example.rb").read_bytes() == original_formula
     invalid_aliases = [
         (["command_aliases: null"], "command_aliases must be a mapping"),

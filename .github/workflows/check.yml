@@ -3,6 +3,16 @@ name: check Homebrew formula
 on:
   workflow_call:
     inputs:
+      commit:
+        description: Full upstream source SHA; defaults to caller github.sha.
+        required: false
+        type: string
+        default: ""
+      spec-commit:
+        description: Full caller SHA containing the spec; defaults to commit.
+        required: false
+        type: string
+        default: ""
       tap-repository:
         description: Homebrew tap repository in owner/name form.
         required: true
@@ -58,7 +68,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ github.repository }}
-          ref: ${{ github.sha }}
+          ref: ${{ inputs.spec-commit || inputs.commit || github.sha }}
           path: source
           fetch-depth: 0
           persist-credentials: false
@@ -70,7 +80,8 @@ jobs:
           tap-path: tap
           source-path: source
           repository: ${{ github.repository }}
-          commit: ${{ github.sha }}
+          commit: ${{ inputs.commit || github.sha }}
+          spec-commit: ${{ inputs.spec-commit || inputs.commit || github.sha }}
           spec-path: ${{ inputs.spec-path }}
           validation-mode: spec
 

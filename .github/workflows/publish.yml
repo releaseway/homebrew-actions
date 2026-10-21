@@ -7,6 +7,11 @@ on:
         description: Full 40-character caller source commit SHA.
         required: true
         type: string
+      spec-commit:
+        description: Full caller SHA containing the Formula spec; defaults to commit.
+        required: false
+        type: string
+        default: ""
       version:
         description: Product version used by Formula rendering.
         required: true
@@ -73,6 +78,7 @@ jobs:
       - name: Validate immutable publish inputs
         env:
           COMMIT: ${{ inputs.commit }}
+          SPEC_COMMIT: ${{ inputs.spec-commit }}
           VERSION: ${{ inputs.version }}
           TAP_REPOSITORY: ${{ inputs.tap-repository }}
           TAP_BRANCH: ${{ inputs.tap-branch }}
@@ -117,7 +123,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ github.repository }}
-          ref: ${{ inputs.commit }}
+          ref: ${{ inputs.spec-commit || inputs.commit }}
           path: source
           fetch-depth: 0
           persist-credentials: false
@@ -130,6 +136,7 @@ jobs:
           source-path: source
           repository: ${{ github.repository }}
           commit: ${{ inputs.commit }}
+          spec-commit: ${{ inputs.spec-commit }}
           version: ${{ inputs.version }}
           spec-path: ${{ inputs.spec-path }}
           validation-mode: release

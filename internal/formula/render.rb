@@ -434,6 +434,7 @@ def ensure_known_keys(spec)
 end
 
 source_root = File.realpath(ENV.fetch("SOURCE_PATH"))
+fail_with("spec-path must not contain control characters") if ENV.fetch("SPEC_PATH").match?(/[[:cntrl:]]/)
 spec_path = File.realpath(ENV.fetch("SPEC"))
 unless spec_path.start_with?(source_root + File::SEPARATOR)
   fail_with("spec-path must stay inside the source repository")
@@ -485,6 +486,11 @@ lifecycle = [
 
 content = +"# releaseway-version: #{ENV.fetch("VERSION")}\n"
 content << "# releaseway-source-commit: #{ENV.fetch("SOURCE_COMMIT")}\n"
+if ENV.fetch("SPEC_COMMIT") != ENV.fetch("SOURCE_COMMIT")
+  content << "# releaseway-spec-commit: #{ENV.fetch("SPEC_COMMIT")}\n"
+  content << "# releaseway-spec-path: #{ENV.fetch("SPEC_PATH")}\n"
+  content << "# releaseway-spec-sha256: #{Digest::SHA256.hexdigest(spec_text)}\n"
+end
 content << "class #{class_name} < Formula\n"
 content << "  desc #{desc.dump}\n"
 content << "  homepage #{homepage.dump}\n"
@@ -608,6 +614,9 @@ File.open(ENV.fetch("GITHUB_OUTPUT"), "a") do |output|
   output.puts "archive-url=#{source&.fetch("url", "") || ""}"
   output.puts "sha256=#{source&.fetch("sha256", "") || ""}"
   output.puts "commit=#{ENV.fetch("SOURCE_COMMIT")}"
+  output.puts "spec-commit=#{ENV.fetch("SPEC_COMMIT")}"
+  output.puts "spec-path=#{ENV.fetch("SPEC_PATH")}"
+  output.puts "spec-sha256=#{Digest::SHA256.hexdigest(spec_text)}"
   output.puts "version=#{ENV.fetch("VERSION")}"
   output.puts "distribution=#{distribution.fetch("type")}"
   output.puts "release-tag=#{distribution.fetch("tag", "")}"

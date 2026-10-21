@@ -21,6 +21,7 @@ reject_multiline() {
 }
 
 reject_multiline commit "$COMMIT"
+reject_multiline spec-commit "${SPEC_COMMIT:-}"
 reject_multiline version "$VERSION"
 reject_multiline tap-repository "$TAP_REPOSITORY"
 reject_multiline tap-branch "$TAP_BRANCH"
@@ -33,6 +34,10 @@ case "$COMMIT" in
 esac
 if [ "${#COMMIT}" -ne 40 ]; then
   echo "commit must be a full 40-character SHA" >&2
+  exit 1
+fi
+if [[ -n "${SPEC_COMMIT:-}" && ! "$SPEC_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]]; then
+  echo "spec-commit must be a full 40-character SHA" >&2
   exit 1
 fi
 

@@ -28,6 +28,7 @@ reject_multiline() {
 
 reject_multiline "repository" "$REPOSITORY"
 reject_multiline "commit" "$COMMIT"
+reject_multiline "spec-commit" "${SPEC_COMMIT:-}"
 reject_multiline "version" "${VERSION:-}"
 reject_multiline "spec-path" "$SPEC_PATH"
 
@@ -70,6 +71,11 @@ if [[ ! "$COMMIT" =~ ^[0-9a-fA-F]{40}$ ]]; then
   echo "commit must be a full 40-character SHA" >&2
   exit 1
 fi
+SPEC_COMMIT="${SPEC_COMMIT:-$COMMIT}"
+if [[ ! "$SPEC_COMMIT" =~ ^[0-9a-fA-F]{40}$ ]]; then
+  echo "spec-commit must be a full 40-character SHA" >&2
+  exit 1
+fi
 
 case "$SPEC_PATH" in
   /* | *"/../"* | ../* | */.. | "..")
@@ -90,8 +96,9 @@ if [[ ! "$source_commit" =~ ^[0-9a-fA-F]{40}$ ]]; then
   exit 1
 fi
 normalized_commit="$(printf '%s' "$COMMIT" | tr '[:upper:]' '[:lower:]')"
-if [ "$source_commit" != "$normalized_commit" ]; then
-  echo "source checkout does not match commit: checkout=$source_commit commit=$normalized_commit" >&2
+normalized_spec_commit="$(printf '%s' "$SPEC_COMMIT" | tr '[:upper:]' '[:lower:]')"
+if [ "$source_commit" != "$normalized_spec_commit" ]; then
+  echo "source checkout does not match spec-commit: checkout=$source_commit spec-commit=$normalized_spec_commit" >&2
   exit 1
 fi
 
@@ -110,7 +117,9 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 TAP_PATH="$TAP_PATH" \
 REPOSITORY="$REPOSITORY" \
 VERSION="$version" \
-SOURCE_COMMIT="$source_commit" \
+SOURCE_COMMIT="$normalized_commit" \
+SPEC_COMMIT="$normalized_spec_commit" \
+SPEC_PATH="$SPEC_PATH" \
 SOURCE_PATH="$SOURCE_PATH" \
 SPEC="$spec" \
 VALIDATION_MODE="$VALIDATION_MODE" \

@@ -13,8 +13,12 @@ inputs:
     description: GitHub repository in owner/name form.
     required: true
   commit:
-    description: Full source commit SHA associated with the checked-out Formula spec.
+    description: Full upstream source commit SHA.
     required: true
+  spec-commit:
+    description: Full caller commit containing the Formula spec; defaults to commit.
+    required: false
+    default: ""
   version:
     description: Formula version. Defaults to the first 12 characters of commit. Numeric v prefixes are stripped and the normalized value expands {version} in release templates.
     required: false
@@ -29,6 +33,15 @@ inputs:
     default: "release"
 
 outputs:
+  spec-commit:
+    description: Immutable caller commit containing the spec.
+    value: ${{ steps.update.outputs.spec-commit }}
+  spec-path:
+    description: Caller relative spec path.
+    value: ${{ steps.update.outputs.spec-path }}
+  spec-sha256:
+    description: SHA-256 of the spec bytes.
+    value: ${{ steps.update.outputs.spec-sha256 }}
   formula:
     description: Formula name declared by the spec.
     value: ${{ steps.update.outputs.formula }}
@@ -70,6 +83,7 @@ runs:
         SOURCE_PATH: ${{ inputs.source-path }}
         REPOSITORY: ${{ inputs.repository }}
         COMMIT: ${{ inputs.commit }}
+        SPEC_COMMIT: ${{ inputs.spec-commit }}
         VERSION: ${{ inputs.version }}
         SPEC_PATH: ${{ inputs.spec-path }}
         VALIDATION_MODE: ${{ inputs.validation-mode }}

@@ -68,6 +68,12 @@ def assert_preflight() -> None:
 
         ok = run("validate-publish-inputs.sh", cwd=cwd, env=base)
         assert ok.returncode == 0, ok.stderr
+        for spec_commit in ["", "b" * 40, "B" * 40]:
+            result = run("validate-publish-inputs.sh", cwd=cwd, env={**base, "SPEC_COMMIT": spec_commit})
+            assert result.returncode == 0, result.stderr
+        for spec_commit in ["main", "b" * 39, "b" * 41, "b" * 40 + "\n"]:
+            result = run("validate-publish-inputs.sh", cwd=cwd, env={**base, "SPEC_COMMIT": spec_commit})
+            assert result.returncode != 0, spec_commit
 
         bad_commit = run(
             "validate-publish-inputs.sh",

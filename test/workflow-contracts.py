@@ -13,15 +13,17 @@ def assert_check_contract() -> None:
     assert "secrets:" not in inputs
     assert "      formula:" not in inputs
     assert "      ref:" not in inputs
-    assert "      commit:" not in inputs
+    assert "      commit:" in inputs
+    assert "      spec-commit:" in inputs
     assert "      version:" not in inputs
     for optional_input in ["tap-repository", "tap-branch", "spec-path"]:
         assert f"      {optional_input}:" in inputs
 
     assert "outputs:\n      formula:" in public
     assert "repository: ${{ github.repository }}" in text
-    assert "ref: ${{ github.sha }}" in text
-    assert "commit: ${{ github.sha }}" in text
+    assert "ref: ${{ inputs.spec-commit || inputs.commit || github.sha }}" in text
+    assert "commit: ${{ inputs.commit || github.sha }}" in text
+    assert "spec-commit: ${{ inputs.spec-commit || inputs.commit || github.sha }}" in text
     assert "uses: ./automation/internal/formula" in text
     assert "formula: ${{ steps.formula.outputs.formula }}" in text
     assert "path: tap/${{ steps.formula.outputs.formula-path }}" in text
@@ -53,7 +55,8 @@ def assert_publish_contract() -> None:
         assert f"      {output}:" in public
 
     assert "COMMIT: ${{ inputs.commit }}" in text
-    assert "ref: ${{ inputs.commit }}" in text
+    assert "ref: ${{ inputs.spec-commit || inputs.commit }}" in text
+    assert "SPEC_COMMIT: ${{ inputs.spec-commit }}" in text
     assert "commit: ${{ inputs.commit }}" in text
     assert "formula: ${{ steps.formula.outputs.formula }}" in text
     assert "path: tap/${{ steps.formula.outputs.formula-path }}" in text
@@ -80,7 +83,7 @@ def assert_internal_formula_contract() -> None:
     assert 'required_string(spec, "name")' in generator
     assert '"formula=#{formula}"' in generator
     assert '"commit=#{ENV.fetch(\"SOURCE_COMMIT\")}"' in generator
-    assert "source checkout does not match commit" in generator
+    assert "source checkout does not match spec-commit" in generator
 
 
 def assert_repository_contract() -> None:
