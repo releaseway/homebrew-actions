@@ -57,3 +57,8 @@ other Git inputs match. They still check current documentation, source identity
 and the new Release asset. Tags perform a lightweight branch-CI identity check.
 The archive guide explains the initial full approval, revocation and forced full
 checks. Source, Formula and native validation policies remain unchanged.
+
+Read the publication summary to distinguish the reused approval from this candidate:
+`original SHA` and `original verification` identify the full campaign, while
+`current CI` identifies this candidate's checks. `verification` reports whether the
+release used a fresh full approval or an equivalent approval.
