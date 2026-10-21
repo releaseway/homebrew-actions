@@ -167,7 +167,8 @@ class ActionsDistributionTests(unittest.TestCase):
         return buffer.getvalue()
 
     def check(self, run_id=4):
-        return MODULE['verify']('releaseway/actions', SHA, [2], run_id)
+        # Historical policy remains readable for already archived approvals.
+        return MODULE['verify']('releaseway/actions', SHA, [2], run_id, policy_id='release-v1')
 
     def test_complete_set_and_notes_only(self):
         self.assertEqual(self.check()['distribution']['run_id'], 4)

@@ -69,7 +69,7 @@ def require_ci(repository, candidate, workflow):
     return ci
 
 
-def verify_distribution(candidate, run_id):
+def verify_distribution(candidate, run_id, release_set=False):
     require(type(run_id) is int and run_id > 0, 'full distribution/Pages acceptance run is required')
     fixture = 'releaseway/release-fixture'
     run = api_json(f'repos/{fixture}/actions/runs/{run_id}')
@@ -82,7 +82,24 @@ def verify_distribution(candidate, run_id):
     require(not artifact['expired'] and 0 < artifact['size_in_bytes'] <= 1024 * 1024, 'distribution artifact expired or too large')
     receipts = BUNDLE['receipts'](api_bytes(f'repos/{fixture}/actions/artifacts/{artifact["id"]}/zip'), 'distribution')
     verify_distribution_receipts(candidate, run['head_sha'], run_id, run['run_attempt'], receipts)
-    return {'run_id': run_id, 'run_attempt': run['run_attempt'], 'artifact_id': artifact['id']}
+    result = {'run_id': run_id, 'run_attempt': run['run_attempt'], 'artifact_id': artifact['id']}
+    if release_set:
+        matching = [a for a in artifacts if a['name'] == f'release-set-evidence-{run_id}-{run["run_attempt"]}']
+        require(len(matching) == 1, 'current release-set acceptance artifact missing or ambiguous')
+        aggregate = matching[0]
+        require(type(aggregate.get('id')) is int and aggregate['id'] > 0 and aggregate.get('expired') is False
+                and type(aggregate.get('size_in_bytes')) is int and 0 < aggregate['size_in_bytes'] <= 1024**2,
+                'release-set acceptance artifact expired or too large')
+        raw = api_bytes(f'repos/{fixture}/actions/artifacts/{aggregate["id"]}/zip')
+        require(aggregate.get('digest') == 'sha256:' + BUNDLE['sha256'](raw), 'aggregate provider digest mismatch')
+        receipt = BUNDLE['receipts'](raw, 'release-set')[0]
+        checker = runpy.run_path(str(Path(__file__).with_name('verify-release-set-receipts.py')))
+        checker['verify_provider'](receipt, candidate, run, artifacts, api_json, api_bytes, pages, BUNDLE)
+        result['release_set'] = {'artifact_id': aggregate['id'],
+            'report_artifact_ids': [int(r['reportArtifactId']) for r in receipt['pages']],
+            'site_artifact_ids': [int(r['siteArtifactId']) for r in receipt['pages']],
+            'deployment_ids': [int(r['deploymentId']) for r in receipt['pages']]}
+    return result
 
 
 def verify(repository, candidate, run_ids, distribution_run_id=None, policy_id=None):
@@ -139,7 +156,7 @@ def verify(repository, candidate, run_ids, distribution_run_id=None, policy_id=N
     result = {'candidate_repository': repository, 'candidate_sha': candidate, 'ci_run_id': ci['id'], 'acceptance': accepted}
     if repository == 'releaseway/actions':
         result['distribution_ci_run_id'] = require_ci(repository, candidate, 'distribution.yml')['id']
-        result['distribution'] = verify_distribution(candidate, distribution_run_id)
+        result['distribution'] = verify_distribution(candidate, distribution_run_id, policy_id == 'actions-release-set-v2')
     else:
         require(distribution_run_id is None, 'distribution evidence applies only to actions releases')
     return result

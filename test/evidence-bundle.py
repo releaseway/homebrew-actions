@@ -168,7 +168,7 @@ class BundleTests(unittest.TestCase):
             if not (sibling / '.git').exists():
                 continue
             for name in ['verify-release-evidence.py', 'verify-distribution-receipts.py', 'evidence-bundle.py',
-                         'verify-evidence-bundle.py', 'release-evidence-policies.json',
+                         'verify-evidence-bundle.py', 'release-evidence-policies.json', 'verify-release-set-receipts.py',
                          'verify-archived-release.py', 'prepare-archive-evidence.py', 'prepare-release-evidence.py']:
                 self.assertEqual((ROOT / 'scripts' / name).read_bytes(), (sibling / 'scripts' / name).read_bytes(), repo + '/' + name)
             for name in ['verify-homebrew-features.py', 'verify-homebrew-native.py']:

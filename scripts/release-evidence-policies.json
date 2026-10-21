@@ -24,6 +24,17 @@
     "native_invocations": 6,
     "native_receipts": 16
   },
+  "actions-release-set-v2": {
+    "repositories": ["releaseway/actions"],
+    "description": "Exact-candidate CI and notes acceptance, six legacy distribution receipts, and a separate release-set aggregate bound to original report/docs ZIPs and two provider deployment jobs.",
+    "acceptance_schema": 1,
+    "release_set_schema": 1,
+    "required_cases": [
+      "three-os-core", "docs-merge", "version-url-retained", "alias-advanced", "empty-skipped",
+      "partial-rejected", "digest-tamper-rejected", "rerun-same-digest", "schema1-regression",
+      "mixed-provenance", "source-change-rejected"
+    ]
+  },
   "legacy-20261020": {
     "repositories": [
       "releaseway/actions",

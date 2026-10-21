@@ -33,6 +33,8 @@ jobs:
         run: python3 test/release-evidence.py
       - name: Check durable evidence bundles
         run: python3 test/evidence-bundle.py
+      - name: Release-set provider evidence and offline replay
+        run: python3 test/release-set-evidence.py
       - name: Check Homebrew revision/platform approval
         run: python3 test/homebrew-feature-evidence.py
       - name: Publish scripts

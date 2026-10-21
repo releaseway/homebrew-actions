@@ -62,6 +62,7 @@ def reject_bool_ids(value):
 
 
 def receipts(raw, kind):
+    require(kind in ('distribution', 'native', 'acceptance', 'release-set'), 'unsupported receipt type')
     require(0 < len(raw) <= MAX_ZIP, 'artifact ZIP exceeds limit')
     with zipfile.ZipFile(io.BytesIO(raw)) as archive:
         members = archive.infolist()
@@ -94,12 +95,13 @@ def policy_data(policy_id):
 
 
 def current_policy(repository):
-    return 'homebrew-platforms-v2' if repository == 'releaseway/homebrew-actions' else 'release-v1'
+    return ('homebrew-platforms-v2' if repository == 'releaseway/homebrew-actions' else
+            'actions-release-set-v2' if repository == 'releaseway/actions' else 'release-v1')
 
 
 RUN_FIELDS = ('id', 'run_attempt', 'workflow_id', 'head_sha', 'head_branch', 'path', 'event', 'status',
               'conclusion', 'created_at', 'updated_at', 'run_started_at')
-ARTIFACT_FIELDS = ('id', 'name', 'size_in_bytes', 'digest', 'expired', 'created_at', 'expires_at')
+ARTIFACT_FIELDS = ('id', 'name', 'size_in_bytes', 'digest', 'expired', 'created_at', 'expires_at', 'workflow_run')
 JOB_FIELDS = ('id', 'name', 'status', 'conclusion', 'started_at', 'completed_at', 'runner_name',
               'runner_group_name', 'labels')
 
@@ -111,6 +113,11 @@ def run_snapshot(run):
 
 
 def snapshot(value):
+    if isinstance(value, list):
+        return [{key: item[key] for key in ('id', 'state', 'log_url', 'environment_url', 'created_at') if key in item}
+                for item in value]
+    if 'environment' in value and 'sha' in value:
+        return {key: value[key] for key in ('id', 'sha', 'environment', 'task', 'created_at') if key in value}
     if 'workflow_runs' in value:
         return {'workflow_runs': [run_snapshot(run) for run in value['workflow_runs']]}
     if 'artifacts' in value:
@@ -127,6 +134,8 @@ def checker_identity(repository, commit, policy_id='release-v1'):
              'verify-evidence-bundle.py', 'release-evidence-policies.json')
     if policy_id == 'homebrew-platforms-v2':
         names += ('verify-homebrew-features.py', 'verify-homebrew-native.py')
+    if policy_id == 'actions-release-set-v2':
+        names += ('verify-release-set-receipts.py',)
     return {'repository': repository, 'commit': commit,
             'files': {name: sha256((ROOT / name).read_bytes()) for name in names}}
 
@@ -192,7 +201,7 @@ def collect(module, repository, candidate, run_ids, distribution_run, tag, check
         # Provider digests bind precisely the bytes downloaded, not extracted/repacked files.
         for path, archive in archives.items():
             artifact_id = int(path.split('/artifacts/')[1].split('/')[0])
-            metadata = [a for response in responses.values() for a in response.get('artifacts', [])
+            metadata = [a for response in responses.values() if isinstance(response, dict) for a in response.get('artifacts', [])
                         if a['id'] == artifact_id]
             require(len(metadata) == 1 and metadata[0].get('digest') == 'sha256:' + archive['sha256'],
                     'artifact provider digest mismatch')
@@ -236,14 +245,19 @@ def verify_bundle(bundle, repository, tag, candidate, module=None):
             raise ValueError('invalid artifact base64') from error
         require(0 < len(raw) <= MAX_ZIP and sha256(raw) == archive['sha256'], 'artifact hash mismatch')
         artifact_id = int(path.split('/artifacts/')[1].split('/')[0])
-        matching = [a for response in responses.values() for a in response.get('artifacts', []) if a['id'] == artifact_id]
+        matching = [a for response in responses.values() if isinstance(response, dict) for a in response.get('artifacts', []) if a['id'] == artifact_id]
         require(len(matching) == 1 and matching[0]['digest'] == 'sha256:' + sha256(raw), 'provider digest mismatch')
         require(type(matching[0]['size_in_bytes']) is int and 0 < matching[0]['size_in_bytes'] <= MAX_ZIP, 'invalid provider artifact size')
         for key in ('created_at', 'expires_at'):
             timestamp(matching[0][key])
         name = matching[0]['name']
-        kind = 'distribution' if name.startswith('distribution-evidence-') else 'native' if name.startswith('homebrew-validation-') else 'acceptance'
-        receipts(raw, kind)
+        if policy['id'] == 'actions-release-set-v2' and (name.startswith('releaseway-pages-') or name.startswith('release-set-docs-')):
+            checker = runpy.run_path(str(ROOT / 'verify-release-set-receipts.py'))
+            checker['read_archive'](raw, {'report.json'} if name.endswith('-report') else {'index.html', '.well-known/release-set.json'})
+        else:
+            kind = ('distribution' if name.startswith('distribution-evidence-') else 'native' if name.startswith('homebrew-validation-')
+                    else 'release-set' if name.startswith('release-set-evidence-') else 'acceptance')
+            receipts(raw, kind)
         decoded[path] = raw
     checker = bundle['checker']
     require(checker['repository'] in expected_policy['repositories'] and re.fullmatch(r'[0-9a-f]{40}', checker['commit']), 'invalid checker identity')
@@ -296,6 +310,8 @@ def verify_bundle(bundle, repository, tag, candidate, module=None):
         result = module['verify'](repository, candidate, bundle['requests']['acceptance_runs'], bundle['requests']['distribution_run'], policy_id=policy['id'])
         require(result == bundle['result'], 'approval result mismatch')
         for response in responses.values():
+            if not isinstance(response, dict):
+                continue
             for run in response.get('workflow_runs', []):
                 require(type(run.get('run_attempt')) is int and run['run_attempt'] > 0, 'CI attempt missing')
         for entry in result['acceptance'] + ([result['distribution']] if 'distribution' in result else []):
@@ -317,7 +333,7 @@ def verify_bundle(bundle, repository, tag, candidate, module=None):
                 timestamp(run[key])
             require(run['status'] == 'completed' and run['conclusion'] == 'success', 'provider run incomplete')
             if run_id in ci_ids and repo == repository:
-                listed = [item for response in responses.values() for item in response.get('workflow_runs', [])
+                listed = [item for response in responses.values() if isinstance(response, dict) for item in response.get('workflow_runs', [])
                           if item['id'] == run_id]
                 require(len(listed) == 1 and listed[0] == run, 'CI list/detail snapshot mismatch')
             jobs = list(module['pages'](path + '/attempts/' + str(run['run_attempt']) + '/jobs', 'jobs'))
