@@ -166,6 +166,30 @@ class ReleaseSetEvidenceTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 S['read_archive'](zip_files(files), {'report.json'})
 
+    def test_consistent_forged_provenance_cannot_replace_original_reports(self):
+        # Content digests deliberately omit provenance. Alter every matching
+        # asset/file reference coherently so semantic checks alone cannot bind it.
+        for r in self.receipt['core'] + self.receipt['pages']:
+            source = r['report']['source']
+            release = next(x for x in source['releases'] if x['tag'] == PREFIX + '1.0.0')
+            asset = next(x for x in release['assets'] if x['name'] == 'bootstrap.sh')
+            original = asset['id']; asset['id'] = 123456
+            for f in r['report']['files']:
+                if f.get('releaseId') == release['releaseId'] and f.get('assetId') == original:
+                    f['assetId'] = asset['id']
+        S['verify_receipt'](SHA, SOURCE, RUN, ATTEMPT, self.receipt)
+        self.raw[6] = zip_files({'acceptance.json': json.dumps(self.receipt)}); self.decorate()
+        with self.assertRaisesRegex(ValueError, 'original report'):
+            self.check()
+
+    def test_old_policy_cannot_approve_a_fresh_draft(self):
+        legacy = B['collect'](self.module, REPO, SHA, [2], RUN, 'v1.2.3',
+                              B['checker_identity'](REPO, SHA), self.collection, 'release-v1')[1]
+        prepare = runpy.run_path(str(ROOT / 'scripts/prepare-release-evidence.py'))
+        self.assertEqual(prepare['current_policy'](REPO), 'actions-release-set-v2')
+        with self.assertRaisesRegex(ValueError, 'frozen policy differs'):
+            prepare['bind_inputs'](legacy, REPO, 'v1.2.3', SHA, [2], RUN, 'actions-release-set-v2')
+
     def test_complete_original_bundle_replays_with_empty_path(self):
         bundle = self.collect()
         self.assertEqual(len(bundle['archives']), 7)
