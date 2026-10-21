@@ -12,6 +12,12 @@ repository owns published `Formula/*.rb` state.
 `8fe42d36a7f93a3c399461efbe571fc695d4cdc6`. Pin all reusable workflows to this
 full SHA.
 
+The main branch additionally implements **unreleased** packaging `revision`,
+separate source/spec commits, explicit supported platforms and native validation
+receipts. See [packaging and platform configuration](docs/packaging-platforms.md)
+before evaluating a candidate. The v0.4.3 examples below retain their published
+contract and do not include those new inputs.
+
 ## Quick start
 
 ### 1. Describe the Formula
@@ -182,6 +188,9 @@ against it before Formula rendering.
 
 ### Version protection and rollback
 
+This section describes v0.4.3. The unreleased candidate additionally compares
+packaging revision; see [revision updates](docs/packaging-platforms.md#publish-a-packaging-fix-without-changing-upstream-source).
+
 Publishing an existing Formula blocks version downgrades by default. At equal
 scheme and version, metadata or install/test edits are allowed when the source
 commit is unchanged.
@@ -239,7 +248,7 @@ tap so the candidate is generated and validated again. A retry of only the push
 step cannot certify different bytes. `allow-downgrade` controls version ordering
 and never bypasses this byte check. The v0.4.3 pins above include this safeguard.
 
-The spec currently does not accept Homebrew's `revision` field. A packaging-only
+The v0.4.3 spec does not accept Homebrew's `revision` field. A packaging-only
 revision at the same upstream version is not a supported update policy. Do not
 use `version_scheme` as a substitute: it changes the version numbering sequence.
 
@@ -278,12 +287,15 @@ Direct pushes must be allowed by the destination branch policy.
 published immutable release, source commit, declared assets, and SHA-256 digests, then
 installs/tests the generated Formula on every required native runner before publishing.
 
-For source distributions, release validation currently runs on macOS arm64 only.
+On v0.4.3, source release validation runs on macOS arm64 only.
 This is not evidence of Linux or Intel execution. For GitHub Release asset
 distributions, declaring an operating system requires both its arm64 and x86_64
 assets; those declared OS/architecture pairs each run native validation. A single
 architecture per OS and a configurable source-validation matrix are not supported
-by the current spec. Spec audits alone do not prove native installation.
+by that published spec. These defaults remain when `platforms` is omitted on the
+unreleased candidate; an explicit declaration enables the new support model.
+See [platform configuration](docs/packaging-platforms.md). Spec audits alone do not
+prove native installation.
 
 Linux x86_64 validation and spec audits use Ubuntu 24.04, matching the Linux arm64
 runner's Ubuntu release. Formula generation, tap publication and deletion also
@@ -309,6 +321,10 @@ python3 test/formula-validation.py
 python3 test/setup-deploy-key.py
 python3 test/tap-maintenance.py
 python3 test/release-evidence.py
+python3 test/evidence-bundle.py
+python3 test/homebrew-feature-evidence.py
+python3 test/platform-contracts.py
+python3 test/validation-evidence.py
 ```
 
 CI runs the regression suite on Linux and macOS and lints the reusable workflows.
@@ -318,7 +334,9 @@ The Formula action validates inputs in its shell entrypoint and loads
 preserves Formula bytes and workflow outputs.
 
 Repository releases require latest successful push CI at the tag's SHA and matching
-public Homebrew `acceptance-runs`. See the
+public Homebrew `acceptance-runs`. The unreleased release gate requires both the
+legacy public and revision/platform campaigns and preserves a durable approval
+asset. See [archive verification](https://github.com/releaseway/actions/blob/main/docs/release-evidence.md) and the
 [candidate guide](https://github.com/releaseway/release-fixture#candidate-release-readiness)
 for literal candidate pins, fixture taps, retention and retries.
 
