@@ -1,16 +1,54 @@
 #!/usr/bin/env ruby
 require "open3"
 require "rubygems"
+require "ripper"
 
 def reject(message)
   abort "#{message}. Use allow-downgrade=true for an intentional replacement."
 end
 
+def call_token(node)
+  return nil unless node.is_a?(Array)
+  case node.first
+  when :command, :vcall, :fcall then node[1]
+  when :method_add_arg, :method_add_block then call_token(node[1])
+  when :call, :command_call then node[3]
+  end
+end
+
+def nested_directive?(node, key)
+  return false unless node.is_a?(Array)
+  return false if %i[def defs].include?(node.first)
+  token = call_token(node)
+  # These blocks contain product Ruby, not Formula package declarations.
+  return false if node.first == :method_add_block && %w[install post_install test service livecheck].include?(token&.[](1))
+  return true if token&.[](1) == key
+  node.any? { |child| nested_directive?(child, key) }
+end
+
 def integer_literal(content, key)
-  declarations = content.scan(/^\s*#{Regexp.escape(key)}\b([^\n]*)$/).flatten
+  error = "Formula #{key} must be a non-negative integer literal"
+  tree = Ripper.sexp(content)
+  classes = tree&.dig(1)&.select do |node|
+    node.first == :class && node.dig(2, 0) == :var_ref && node.dig(2, 1, 1) == "Formula"
+  end
+  abort error unless classes&.one?
+  declarations = classes.first.dig(3, 1).filter_map do |statement|
+    token = call_token(statement)
+    if token&.[](1) == key
+      line = content.lines.fetch(token[2][0] - 1)
+      match = line.match(/^\s*#{Regexp.escape(key)}\b([^\n]*)$/)
+      abort error unless match
+      match[1]
+    else
+      # Conditional or indirect package declarations cannot be treated as zero.
+      abort error if nested_directive?(statement, key)
+      nil
+    end
+  end
   return 0 if declarations.empty?
   unless declarations.one? && declarations.first.match?(/\A\s+(?:0|[1-9]\d*)\s*(?:#.*)?\z/)
-    abort "Formula #{key} must be a non-negative integer literal"
+    abort error
   end
   declarations.first.strip.to_i
 end

@@ -461,7 +461,49 @@ def assert_revision_policy() -> None:
         assert run("commit-formula.sh", cwd=repo, env={**env, "ALLOW_DOWNGRADE": "true"}).returncode == 0
 
 
+def assert_package_declaration_scope() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        repo = Path(directory)
+        git(repo, "init", "--initial-branch=main")
+        configure(repo)
+        target = repo / "example.rb"
+        snippets = '''  caveats <<~EOS
+    revision 999
+    version_scheme 999
+  EOS
+  def install
+    revision = "source commit"
+  end
+  test do
+    revision = "test output"
+    version_scheme = "application setting"
+  end
+'''
+        def content(revision):
+            return formula("1.2.3", revision=revision).removesuffix("end\n") + snippets + "end\n"
+        target.write_text(content(None))
+        git(repo, "add", ".")
+        git(repo, "commit", "-m", "nested product Ruby")
+        env = dict(os.environ, FORMULA_PATH="example.rb", VERSION="1.2.3", COMMIT="a" * 40)
+        validator = str(SCRIPTS / "validate-formula-update.rb")
+        for revision, package in [(None, "1.2.3"), (1, "1.2.3_1")]:
+            target.write_text(content(revision))
+            result = subprocess.run(["ruby", validator, "--package-version"], cwd=repo, env=env, capture_output=True, text=True)
+            assert result.returncode == 0 and result.stdout.strip() == package, result.stderr
+            result = subprocess.run(["ruby", validator, "HEAD"], cwd=repo, env=env, capture_output=True, text=True)
+            assert result.returncode == 0, result.stderr
+        git(repo, "add", ".")
+        git(repo, "commit", "-m", "packaging revision one")
+        target.write_text(content(None))
+        result = subprocess.run(["ruby", validator, "HEAD"], cwd=repo, env=env, capture_output=True, text=True)
+        assert result.returncode != 0 and "revision downgrade" in result.stderr
+        target.write_text(formula("1.2.3", revision=1).replace("  revision 1", "  if true\n    revision 1\n  end"))
+        result = subprocess.run(["ruby", validator, "--package-version"], cwd=repo, env=env, capture_output=True, text=True)
+        assert result.returncode != 0 and "integer literal" in result.stderr
+
+
 def main() -> None:
+    assert_package_declaration_scope()
     assert_revision_policy()
     assert_validated_bytes()
     assert_preflight()
