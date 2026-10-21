@@ -12,6 +12,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - name: Shadow input classification (not an approval)
+        run: python3 scripts/release-inputs.py --baseline "$(git rev-parse HEAD^ 2>/dev/null || true)"
+      - run: python3 test/release-inputs.py
       - run: python3 test/release-evidence.py
       - run: python3 test/evidence-bundle.py
       - run: python3 test/release-set-evidence.py
