@@ -8,6 +8,15 @@ permissions:
   contents: read
 
 jobs:
+  evidence:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: python3 test/release-evidence.py
+      - run: python3 test/evidence-bundle.py
+      - run: python3 test/release-set-evidence.py
+      - run: python3 test/homebrew-feature-evidence.py
+
   regression:
     strategy:
       fail-fast: false
@@ -29,14 +38,6 @@ jobs:
         env:
           RELEASEWAY_BREW_CONTRACTS: ${{ runner.os == 'macOS' && '1' || '0' }}
         run: python3 test/platform-contracts.py
-      - name: Release evidence regression
-        run: python3 test/release-evidence.py
-      - name: Check durable evidence bundles
-        run: python3 test/evidence-bundle.py
-      - name: Release-set provider evidence and offline replay
-        run: python3 test/release-set-evidence.py
-      - name: Check Homebrew revision/platform approval
-        run: python3 test/homebrew-feature-evidence.py
       - name: Publish scripts
         run: python3 test/publish-scripts.py
       - name: Formula validation isolation
