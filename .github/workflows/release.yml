@@ -80,7 +80,7 @@ jobs:
       - name: Publish immutable automation release
         if: steps.evidence.outputs.state == 'prepared'
         id: publish
-        uses: releaseway/actions@2abdf26c6f01c1e49da4ba5d85253847fe721fd9 # v0.6.3
+        uses: releaseway/actions@ffbe66ca35cbd7edcd6a10806228db76b6a84baf # v0.7.0
         with:
           tag: ${{ steps.release.outputs.tag }}
           commit: ${{ steps.release.outputs.target }}
