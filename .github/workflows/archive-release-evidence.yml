@@ -63,7 +63,7 @@ jobs:
           commit: ${{ steps.archive.outputs.collector }}
       - name: Publish immutable evidence sidecar
         if: steps.archive.outputs.state == 'prepared'
-        uses: releaseway/actions@2abdf26c6f01c1e49da4ba5d85253847fe721fd9 # v0.6.3
+        uses: releaseway/actions@ffbe66ca35cbd7edcd6a10806228db76b6a84baf # v0.7.0
         with:
           tag: evidence-${{ inputs.tag }}
           commit: ${{ steps.archive.outputs.collector }}
