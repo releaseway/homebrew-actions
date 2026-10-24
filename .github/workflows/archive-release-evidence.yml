@@ -56,7 +56,7 @@ jobs:
             "${extra[@]}"
       - name: Bind sidecar tag to reviewed collector
         if: steps.archive.outputs.state == 'prepared'
-        uses: releaseway/actions/prepare@2abdf26c6f01c1e49da4ba5d85253847fe721fd9 # v0.6.3
+        uses: releaseway/actions/prepare@ffbe66ca35cbd7edcd6a10806228db76b6a84baf # v0.7.0
         with:
           mode: tag
           tag: evidence-${{ inputs.tag }}
