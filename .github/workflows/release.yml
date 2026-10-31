@@ -40,7 +40,7 @@ jobs:
 
       - name: Resolve release tag
         id: release
-        uses: releaseway/actions/prepare@2abdf26c6f01c1e49da4ba5d85253847fe721fd9 # v0.6.3
+        uses: releaseway/actions/prepare@b6f17f2ffe2c8fd92bdf6be4729e1e56d151bef3 # v0.8.0
         with:
           mode: resolve
           tag: ${{ inputs.tag }}
